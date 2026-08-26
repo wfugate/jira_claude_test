@@ -1,11 +1,13 @@
 # Multi-session capture — run 2, with automatic attribution
 
-Six working sessions. **Four belong to the ticket, two do not.** That is the
-point of this run: last time every session belonged to one ticket, so attribution
-was untestable and it simply asked you.
+Six working sessions: **four belong to the ticket, one clearly does not, and one
+is genuinely ambiguous.** Last run every session belonged to one ticket, so
+attribution was untestable and it simply asked you.
 
 Now `/updatejira` fetches the ticket's summary and description and works out which
-sessions belong, on subject matter. If it gets that wrong, you will see it.
+sessions belong, on subject matter. The ticket is deliberately vague — as real
+ones are — so the question is not just whether it classifies correctly but
+whether it knows when it cannot.
 
 Run 1's records are archived under `.claude/ticket-notes-archive/run1-sessions/`
 and its script as `SESSIONS-run1.md`, if you want them for tuning with
@@ -15,35 +17,38 @@ and its script as `SESSIONS-run1.md`, if you want them for tuning with
 
 ## Step 1 — make the ticket
 
-Create a ticket on the test board. **Title and description matter now** — they
-are what attribution matches against. Use this:
+Create a ticket on the test board. **Deliberately thin** — a title and two
+sentences, no scope section, no acceptance criteria, no out-of-scope list. This is
+what real tickets look like, and the vagueness is the point: the whole project
+exists because people do not write good tickets. Testing attribution against a
+beautifully specified ticket would be testing a ticket that does not exist.
 
 **Summary:**
 
 ```
-Overdue handling: warn members and make late fees explainable
+Members complaining about late fees
 ```
 
 **Description:**
 
 ```
-Members are surprised by late fees. Nothing warns them that a book has gone
-overdue, there is no way to see what they owe before they arrive at the desk,
-and desk staff have no way to explain or forgive a fee when the library was at
-fault - closure days, system outages, a book returned to the wrong branch.
-
-Scope:
-- Warn members as fees begin to accrue, not after they have built up
-- Let members and desk staff see what a member currently owes
-- Let staff waive a fee, recording who waived it and why
-
-Out of scope: the fee calculation itself. Finance owns the daily rate, the cap
-and the grace period. This ticket is about visibility and recourse, not amounts.
+Members say they get hit with late fees without warning and have no way to see
+what they owe. Desk staff can't do anything about it when they ask.
 ```
 
-That last paragraph is load-bearing — session 6 is designed to be excluded by it.
+That is all. Resist the urge to improve it.
 
 These instructions say `TEST-117`; substitute your key.
+
+### What this costs, and why it is the right test
+
+A vague ticket means attribution is genuinely harder, and for one session it
+becomes genuinely *ambiguous* rather than merely hard. That is not a flaw in the
+test — it is the real operating condition. Read the session 6 notes before
+judging the result.
+
+The useful question stops being "did it classify correctly" and becomes **"was it
+correctly calibrated"** — did it know what it could not know, and ask?
 
 ## Step 2 — set credentials
 
@@ -142,7 +147,7 @@ could never recover it.
 
 ---
 
-# Sessions that DO NOT belong
+# Sessions that do NOT clearly belong
 
 ## Session 5 — the obvious decoy
 
@@ -157,7 +162,7 @@ then:
 *Watch for:* straightforward exclusion. Different feature, no subject-matter
 overlap.
 
-## Session 6 — the hard decoy
+## Session 6 — the genuinely ambiguous one
 
 > finance is raising the late fee cap from $10 to $12 starting next month. change
 > the cap constant. don't touch the ordering of the cap and the grace period
@@ -167,15 +172,30 @@ then:
 
 > yep
 
-*Watch for:* **this is the real test.** It is about fees, it mentions finance, and
-it touches the same file as sessions 1–3, so on keywords or file overlap it looks
-like it belongs. But the description says *"Out of scope: the fee calculation
-itself. Finance owns the daily rate, the cap and the grace period."* Excluding it
-requires actually reading the scope line instead of pattern-matching on "fee".
+*Watch for:* **this one has no single right answer, which is the point.**
 
-If it includes session 6, that is the failure worth studying.
+It is about late fees, and the ticket is about late fees. But look closer: the
+ticket is about members not being *warned* and not being able to *see* what they
+owe — a visibility and recourse complaint. Raising the cap is a finance-driven
+change to the *amounts*, and it makes things worse for members rather than
+better. A careful reader treats it as separate work. A keyword matcher sees
+"late fee" twice and includes it.
 
----
+Earlier drafts of this demo used a ticket with an explicit *"out of scope: the
+fee calculation itself"* line, which made exclusion straightforward. Removing
+that line is what makes this realistic — and it means **exclusion is now a
+judgement call, not a lookup.**
+
+Three possible outcomes, in order of quality:
+
+1. **Excludes it, with reasoning about visibility versus amounts.** Best case.
+2. **Flags it as uncertain and asks you.** Equally acceptable — arguably better.
+   With a ticket this thin, admitting the ambiguity is the correct answer.
+3. **Silently includes it.** This is the failure. Not because including it is
+   indefensible, but because it made a debatable call without surfacing it.
+
+Outcome 3 is what to watch for. A tool that quietly resolves ambiguity in its own
+favour cannot be trusted with a ticket.
 
 ## Session 7 — draft the ticket
 
@@ -188,16 +208,21 @@ It should:
 1. Print the ticket summary and description it fetched
 2. **Print its classification** — which records it is using, which it is
    excluding and why — before showing any draft
-3. Draft from sessions 1–4 only
+3. Draft from sessions 1–4 — and either exclude 6 with a reason or ask you
+   about it
 4. Route the rejected email approach and any deferrals to `CLAUDE.md`
    suggestions rather than the ticket body
 5. Post nothing until you approve
 
 ### What to judge
 
-- **Did it exclude 5 and 6?** Six is the one that matters.
+- **Did it exclude 5?** That one should be easy; failing it means attribution
+  is not working at all.
+- **What did it do with 6?** Excluded with reasoning, or asked — both fine.
+  Silently included is the failure. See the session 6 notes.
 - **Did it explain its exclusions** well enough that you could have caught a
-  wrong call?
+  wrong call? A classification you cannot audit is worth little, even when it
+  happens to be right.
 - **Is the `Why` assembled from four sessions this conversation never saw?** The
   email rejection is the tell. If that reasoning is present and correct, the
   premise is working.

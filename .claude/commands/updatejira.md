@@ -45,6 +45,18 @@ For each numbered record:
   ticket's reasoning into another's comment and consumes a record that belonged
   somewhere else.
 
+**Most tickets are thin.** A one-line summary and two sentences is normal, and
+it is often not enough to settle every record. When the ticket is too vague to
+decide, that is a fact about the ticket, not a licence to guess. Say which
+records you cannot place and why, and ask.
+
+Be careful of the shallow match. A record sharing vocabulary with the ticket —
+the same feature name, the same noun — is not thereby part of it. Ask what the
+ticket is actually asking for: a ticket about people not being *warned* about
+something is not a ticket about changing that thing's *amounts*, even though both
+mention it. Where a record is arguably either way, surface it rather than
+resolving it silently in your own favour.
+
 If the ticket could not be read at all, you have nothing to classify against —
 ask me rather than falling back to "probably all of them."
 
