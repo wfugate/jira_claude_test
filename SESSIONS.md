@@ -79,7 +79,13 @@ sessions — a credentials problem is far easier to spot now than at the end.
 
 1. **End each session** (`/exit`) or the hook never fires.
 2. **Wait ~15 seconds** before inspecting; the worker runs detached.
-3. **One task per session.**
+3. **One ticket per session — not one task.** Several tasks in one session is
+   fine; the gate pulls out multiple decisions and that is the normal case. What
+   causes trouble is mixing work for *different tickets* in one session, because
+   the record is per-session: a mixed record cannot be attributed correctly
+   either way. (Removable later by attributing individual items rather than
+   whole records.) For this run, keep the six separate anyway — it makes the
+   result legible when you are judging whether attribution worked.
 4. **Do not mention the ticket key in any session.** Attribution should work from
    subject matter alone. Naming the key would short-circuit exactly what is being
    tested, via `ticket_hint`.
