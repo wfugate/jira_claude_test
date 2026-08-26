@@ -13,9 +13,20 @@ Modified files: !`git status --short`
 
 Diff: !`git diff HEAD`
 
-## What ticket $1 actually is
+## Step 1 — read the ticket
 
-!`python .claude/scripts/ticket_context.py $1`
+Run this now, before anything else:
+
+```
+python .claude/scripts/ticket_context.py $1
+```
+
+You need the summary and description to decide which sessions belong. If it
+reports it could not read the ticket, say so and ask me which sessions to use
+rather than guessing.
+
+(This is a step you run rather than something pre-expanded above, because `$1`
+does not expand inside a `!` block.)
 
 ## Reasoning captured from earlier sessions
 
@@ -24,7 +35,7 @@ Most of it did not happen in *this* conversation.
 
 !`python .claude/scripts/notes.py --for-draft`
 
-## First: work out which sessions belong to $1
+## Step 2 — work out which sessions belong to $1
 
 These records are **not** all guaranteed to belong to this ticket. Several
 tickets get worked in one repo, and the capture step does not know which ticket a
@@ -41,6 +52,11 @@ For each numbered record:
   record alone costs nothing; it stays available for its own ticket.
 - **Names a different ticket** in `ticket_hint` — not yours, whatever the subject
   matter. An explicit key beats a subject-matter guess.
+- **A record of a previous `/updatejira` run is not work.** If a record's
+  decisions read like the contents of a ticket draft rather than choices made
+  while building something, it is an artefact of running this command before —
+  exclude it and say so. Feeding a draft back into the next draft manufactures
+  reasoning that nobody ever gave.
 - **Genuinely torn** — say so and **ask me**. Do not guess. Guessing puts one
   ticket's reasoning into another's comment and consumes a record that belonged
   somewhere else.

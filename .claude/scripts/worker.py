@@ -146,6 +146,18 @@ def main():
 
     turns, files = extract_user_turns(transcript)
     log("extracted %d user turns, %d files touched" % (len(turns), len(files)))
+
+    # A session spent running /updatejira is not a session that decided
+    # anything. Recording it would feed a previous draft back into the next one.
+    if any("Update ticket" in t and "captured from earlier sessions" in t
+           for t in turns):
+        log("this was a ticket-update session, not work - recording as empty")
+        base.update({"gate": "skip", "turns": len(turns),
+                     "skip_reason": "NOTHING_TO_RECORD",
+                     "summary": "Ran the ticket-update command; no development "
+                                "decisions made."})
+        notes.write_record(base)
+        return
     base["turns"] = len(turns)
     base["files"] = files
 

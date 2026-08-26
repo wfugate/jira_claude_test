@@ -17,7 +17,15 @@ Capture, as separate items, every instance of:
                ("separate conversation", "not now", "leave it alone", "I know
                it's sketchy but"). THIS IS A DECISION. Never discard it.
 
-Err toward capturing. A marginal item costs a line someone skims past. A missed
+One exception to capturing, and only one. If these turns are someone running a
+ticket-update command - drafting, reviewing or posting a ticket comment, rather
+than deciding anything about the code - there is nothing here to record. Set
+"substantive": false with skip_reason NOTHING_TO_RECORD. Tell-tales: the turns
+consist of a slash command and approvals, or they read like the contents of a
+ticket comment rather than someone deciding something. Capturing those turns
+recycles a previous draft back into the next one, inventing reasoning nobody gave.
+
+Otherwise, err toward capturing. A marginal item costs a line someone skims past. A missed
 decision is gone forever, because the session is over and cannot be replayed.
 When unsure whether something is a decision, capture it.
 
