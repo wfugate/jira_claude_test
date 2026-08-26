@@ -30,12 +30,20 @@ Reply with ONE raw JSON object, no markdown fence, no commentary:
   "rejected": ["..."],
   "deferred": ["..."],
   "substantive": true,
-  "ticket": "<ticket key if one is named in the turns, else empty string>"
+  "ticket": "<ticket key if one is named in the turns, else empty string>",
+  "skip_reason": "<only when substantive is false: NOTHING_TO_RECORD if you are confident the session held no decision at all, or UNCERTAIN if you are not sure>"
 }
 
 For "ticket": only fill this in if a ticket key actually appears in the user's
 turns (something like ABC-123). Never guess or infer one. An empty string is the
 correct answer when no ticket was named.
+
+For "skip_reason": this distinction matters. NOTHING_TO_RECORD means "I read
+this and there was genuinely no decision" - a question, a lookup, an abandoned
+request. UNCERTAIN means "there may have been something here and I could not
+tell." A reviewer treats those completely differently: the first needs no
+attention, the second means the record may be missing something. Never use
+NOTHING_TO_RECORD to mean "probably nothing."
 
 Set "substantive": false ONLY when the session contains no decision, no
 constraint, no rejection, no deferral and no work at all - a bare question, a

@@ -1,7 +1,7 @@
 ---
 description: Draft a ticket update from all sessions captured since the last post
 argument-hint: [TICKET-KEY]
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/jira_comment.py:*)
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/ticket_context.py:*), Bash(python .claude/scripts/jira_comment.py:*)
 disable-model-invocation: true
 ---
 
@@ -13,6 +13,10 @@ Modified files: !`git status --short`
 
 Diff: !`git diff HEAD`
 
+## What ticket $1 actually is
+
+!`python .claude/scripts/ticket_context.py $1`
+
 ## Reasoning captured from earlier sessions
 
 Every unposted session record, captured automatically at the end of each session.
@@ -20,19 +24,33 @@ Most of it did not happen in *this* conversation.
 
 !`python .claude/scripts/notes.py --for-draft`
 
-**These records are not all guaranteed to belong to $1.** Several tickets can be
-worked in the same repo, and the capture step does not know which ticket a
-session was for. Before drafting, work out which numbered sessions belong to
-**$1** and use only those:
+## First: work out which sessions belong to $1
 
-- a session naming a different ticket is not yours — leave it
-- if the subject matter of a session plainly belongs to other work, say so and
-  leave it out
-- if you cannot tell, **ask me** rather than guessing. Guessing puts one ticket's
-  reasoning into another's comment and consumes a record that belonged elsewhere.
+These records are **not** all guaranteed to belong to this ticket. Several
+tickets get worked in one repo, and the capture step does not know which ticket a
+session was for. Decide it here, by comparing each record against the ticket
+summary and description above.
 
-State which sessions you are using, and which you are leaving alone and why,
-before you show the draft.
+Judge on **subject matter**, not on files touched. Unrelated tickets routinely
+touch the same files, so file overlap proves nothing on its own.
+
+For each numbered record:
+
+- **Clearly yes** — its decisions are about what the ticket asks for.
+- **Clearly no** — it is about different work. Name it and leave it. Leaving a
+  record alone costs nothing; it stays available for its own ticket.
+- **Names a different ticket** in `ticket_hint` — not yours, whatever the subject
+  matter. An explicit key beats a subject-matter guess.
+- **Genuinely torn** — say so and **ask me**. Do not guess. Guessing puts one
+  ticket's reasoning into another's comment and consumes a record that belonged
+  somewhere else.
+
+If the ticket could not be read at all, you have nothing to classify against —
+ask me rather than falling back to "probably all of them."
+
+**Print your classification before drafting**: which records you are using, which
+you are excluding and why, one line each. I need to catch a wrong call before it
+becomes a ticket comment.
 
 ## Your task
 

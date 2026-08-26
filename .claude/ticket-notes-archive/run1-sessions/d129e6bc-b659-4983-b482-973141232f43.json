@@ -1,0 +1,26 @@
+{
+  "session_id": "d129e6bc-b659-4983-b482-973141232f43",
+  "transcript_path": "C:\\Users\\willi\\.claude\\projects\\C--demo-lending-multi\\d129e6bc-b659-4983-b482-973141232f43.jsonl",
+  "ended": "2026-08-26T14:07:26",
+  "end_reason": "prompt_input_exit",
+  "posted": false,
+  "turns": 1,
+  "files": [],
+  "gate": "captured",
+  "ticket_hint": "",
+  "summary": "Preserved finance-owned fee cap ordering; added 7/14-day overdue notices and member outstanding-fee totals.",
+  "decisions": [
+    "Add overdue notices at two thresholds: 7 days and 14 days",
+    "Send exactly one notice per threshold, idempotent so re-running the job doesn't send duplicates",
+    "Add a way to view total outstanding fees for a member"
+  ],
+  "constraints": [
+    "Fee cap is applied before the grace period credit is subtracted, making the effective maximum $9.25 rather than $10",
+    "Finance owns the fee cap / grace period ordering, so that ordering must not be changed"
+  ],
+  "rejected": [
+    "Reordering the fee cap and grace period credit calculation so the cap yields the nominal $10 maximum \u00e2\u20ac\u201d rejected because finance owns that ordering"
+  ],
+  "deferred": [],
+  "item_count": 6
+}

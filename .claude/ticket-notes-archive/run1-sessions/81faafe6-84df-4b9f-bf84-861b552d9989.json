@@ -1,0 +1,23 @@
+{
+  "session_id": "81faafe6-84df-4b9f-bf84-861b552d9989",
+  "transcript_path": "C:\\Users\\willi\\.claude\\projects\\C--demo-lending-multi\\81faafe6-84df-4b9f-bf84-861b552d9989.jsonl",
+  "ended": "2026-08-26T13:59:35",
+  "end_reason": "prompt_input_exit",
+  "posted": false,
+  "turns": 1,
+  "files": [
+    "LendingService.cs"
+  ],
+  "gate": "captured",
+  "ticket_hint": "",
+  "summary": "Bumped max concurrent loans from 5 to 8; deferred hold-count fallback fix in Renew.",
+  "decisions": [
+    "Raise the max concurrent loans limit from 5 to 8, motivated by member complaints about the existing cap."
+  ],
+  "constraints": [],
+  "rejected": [],
+  "deferred": [
+    "Fixing the hold-count fallback in Renew, which treats an unknown hold count as zero and lets the renewal through \u00e2\u20ac\u201d user explicitly acknowledged it as sketchy but said to leave it alone for now as a separate conversation."
+  ],
+  "item_count": 2
+}

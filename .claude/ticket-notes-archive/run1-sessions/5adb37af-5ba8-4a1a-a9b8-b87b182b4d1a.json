@@ -1,0 +1,17 @@
+{
+  "session_id": "5adb37af-5ba8-4a1a-a9b8-b87b182b4d1a",
+  "transcript_path": "C:\\Users\\willi\\.claude\\projects\\C--demo-lending-multi\\5adb37af-5ba8-4a1a-a9b8-b87b182b4d1a.jsonl",
+  "ended": "2026-08-26T14:00:35",
+  "end_reason": "prompt_input_exit",
+  "posted": false,
+  "turns": 1,
+  "files": [],
+  "gate": "skip",
+  "ticket_hint": "",
+  "summary": "User asked a read-only question about current loan period and renewal limits; nothing decided.",
+  "decisions": [],
+  "constraints": [],
+  "rejected": [],
+  "deferred": [],
+  "item_count": 0
+}

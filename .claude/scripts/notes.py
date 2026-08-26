@@ -147,12 +147,18 @@ def main():
             for item in r.get(key) or []:
                 print("    %s: %s" % (label, item))
         if r.get("gate") in ("skip", "empty", "error", "unparsed", "corrupt"):
-            blank += 1
-            print("    NOTE: nothing extracted from this session (gate=%s)."
-                  % r.get("gate"))
-            if r.get("transcript_path"):
-                print("          transcript still available: %s"
-                      % r["transcript_path"])
+            reason = r.get("skip_reason") or ""
+            if reason == "NOTHING_TO_RECORD":
+                print("    (nothing to record - the gate read this and found"
+                      " no decision. Not a gap.)")
+            else:
+                blank += 1
+                print("    NOTE: nothing extracted, and the gate was NOT"
+                      " confident it was empty (gate=%s%s)."
+                      % (r.get("gate"), ", " + reason if reason else ""))
+                if r.get("transcript_path"):
+                    print("          transcript available: %s"
+                          % r["transcript_path"])
         if r.get("files"):
             print("    files touched: %s" % ", ".join(r["files"][:10]))
         print()
@@ -163,10 +169,11 @@ def main():
         print("They do NOT all belong to the same update. Select carefully.")
         print()
     if blank:
-        print("WARNING: %d of %d sessions produced no reasoning. If real"
+        print("WARNING: %d of %d sessions produced nothing AND the gate was not"
               % (blank, len(recs)))
-        print("decisions were made in those, any draft is INCOMPLETE - say so")
-        print("rather than writing as though the record is whole.")
+        print("confident they were empty. Those may be missing real decisions,")
+        print("so any draft is possibly INCOMPLETE - say so.")
+        print("(Sessions the gate confidently found empty are not counted.)")
 
 
 if __name__ == "__main__":
