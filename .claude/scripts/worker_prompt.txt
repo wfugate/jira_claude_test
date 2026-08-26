@@ -29,8 +29,13 @@ Reply with ONE raw JSON object, no markdown fence, no commentary:
   "constraints": ["..."],
   "rejected": ["..."],
   "deferred": ["..."],
-  "substantive": true
+  "substantive": true,
+  "ticket": "<ticket key if one is named in the turns, else empty string>"
 }
+
+For "ticket": only fill this in if a ticket key actually appears in the user's
+turns (something like ABC-123). Never guess or infer one. An empty string is the
+correct answer when no ticket was named.
 
 Set "substantive": false ONLY when the session contains no decision, no
 constraint, no rejection, no deferral and no work at all - a bare question, a

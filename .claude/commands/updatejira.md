@@ -15,11 +15,24 @@ Diff: !`git diff HEAD`
 
 ## Reasoning captured from earlier sessions
 
-This is the accumulated record from every session since the last post. It was
-captured automatically at the end of each session — most of it did not happen in
-*this* conversation.
+Every unposted session record, captured automatically at the end of each session.
+Most of it did not happen in *this* conversation.
 
 !`python .claude/scripts/notes.py --for-draft`
+
+**These records are not all guaranteed to belong to $1.** Several tickets can be
+worked in the same repo, and the capture step does not know which ticket a
+session was for. Before drafting, work out which numbered sessions belong to
+**$1** and use only those:
+
+- a session naming a different ticket is not yours — leave it
+- if the subject matter of a session plainly belongs to other work, say so and
+  leave it out
+- if you cannot tell, **ask me** rather than guessing. Guessing puts one ticket's
+  reasoning into another's comment and consumes a record that belonged elsewhere.
+
+State which sessions you are using, and which you are leaving alone and why,
+before you show the draft.
 
 ## Your task
 
@@ -112,13 +125,15 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
    ```
 
    If this is a dry run, say so and skip posting.
-4. Either way, once I confirm we are done, run:
+4. Either way, once I confirm we are done, consume **only the sessions you
+   used** — pass their numbers and the ticket key:
 
    ```
-   python .claude/scripts/notes.py --mark-posted
+   python .claude/scripts/notes.py --mark-posted 1,3,5 $1
    ```
 
-   That sets the watermark so the next `/updatejira` only sees sessions after
-   this point. Do not run it before I approve.
+   Never pass `--all` unless I have confirmed every unposted session belongs to
+   $1. Records you leave unmarked stay available for their own ticket. Do not run
+   this before I approve.
 
 Nothing reaches Jira without my explicit approval.

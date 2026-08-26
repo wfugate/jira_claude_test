@@ -38,10 +38,17 @@ Two things to know:
 - **`worker.log` interleaves.** It is a shared diagnostic log, so concurrent
   workers scribble over each other in it. The *records* are unaffected — do not
   read a mangled log line as evidence of a problem.
-- **Concurrent sessions on the same ticket are fine.** Concurrent sessions on
-  *different* tickets in the same repo are the known gap: the accumulator cannot
-  tell them apart, and `--mark-posted` marks everything as belonging to whichever
-  ticket you drafted first. For this test, treat everything as `TEST-200`.
+- **Several tickets in one repo is handled.** The capture step does not know
+  which ticket a session belonged to, so selection happens at post time:
+  `/updatejira` shows the unposted records numbered, you say which belong to this
+  ticket, and only those are consumed. Records you leave alone stay available for
+  their own ticket. `notes.py` refuses to mark anything without an explicit
+  selection, so nothing gets attributed to the wrong ticket by default.
+- **Mention the ticket key in a session if you can.** The gate picks it up into
+  `ticket_hint`, which makes selection obvious later and triggers a warning when
+  unposted records name more than one ticket. Not required, just helpful.
+- **Nothing is truly destroyed.** Every record keeps its `transcript_path`, so
+  even a record consumed by the wrong ticket can be recovered with `replay.py`.
 
 ## Watching it
 

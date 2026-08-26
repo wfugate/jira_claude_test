@@ -140,6 +140,7 @@ items = sum(len(parsed.get(k) or [])
             for k in ("decisions", "constraints", "rejected", "deferred"))
 base.update({
     "gate": "captured" if parsed.get("substantive") else "skip",
+    "ticket_hint": (parsed.get("ticket") or "").strip(),
     "summary": parsed.get("summary", ""),
     "decisions": parsed.get("decisions") or [],
     "constraints": parsed.get("constraints") or [],
