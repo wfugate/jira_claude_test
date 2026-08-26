@@ -26,6 +26,23 @@ session. `/updatejira` would later read those records and draft from them.
 3. **Don't let sessions bleed together.** One task per session — that is the
    workflow being tested.
 
+## Running several chats at once
+
+**Yes — concurrent sessions are the point, and they work.** Each session gets
+its own record file under `.claude/ticket-notes/sessions/`, written atomically,
+so simultaneous endings cannot corrupt each other. Verified with two sessions
+ending in the same second.
+
+Two things to know:
+
+- **`worker.log` interleaves.** It is a shared diagnostic log, so concurrent
+  workers scribble over each other in it. The *records* are unaffected — do not
+  read a mangled log line as evidence of a problem.
+- **Concurrent sessions on the same ticket are fine.** Concurrent sessions on
+  *different* tickets in the same repo are the known gap: the accumulator cannot
+  tell them apart, and `--mark-posted` marks everything as belonging to whichever
+  ticket you drafted first. For this test, treat everything as `TEST-200`.
+
 ## Watching it
 
 ```
