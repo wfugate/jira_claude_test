@@ -5,21 +5,14 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ACC = os.path.join(os.path.dirname(HERE), "ticket-notes", "accumulated.jsonl")
+sys.path.insert(0, HERE)
+import notes  # noqa: E402
 
-if not os.path.exists(ACC):
-    print("Nothing captured yet - no %s" % ACC)
+records = notes.load_records()
+if not records:
+    print("Nothing captured yet - no records in %s" % notes.SESSIONS)
     print("Have you ended a session in this repo since the hook was installed?")
     sys.exit(0)
-
-records = []
-for ln in open(ACC, encoding="utf-8"):
-    ln = ln.strip()
-    if ln:
-        try:
-            records.append(json.loads(ln))
-        except Exception:
-            pass
 
 verbose = "-v" in sys.argv
 print("=" * 72)

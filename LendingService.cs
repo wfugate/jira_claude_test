@@ -17,9 +17,12 @@ namespace Lending
         private const decimal SuspensionThreshold = 15.00m;
 
         public Loan CheckOut(Book book, Member member, DateTime today,
-                             IEnumerable<Loan> existingLoans)
+                             IEnumerable<Loan> existingLoans,
+                             bool staffOverride = false)
         {
-            if (book.IsReferenceOnly)
+            // Reference-only books are normally not lendable at all. Staff may
+            // override that, but the loan is same-day only -- see DueDate below.
+            if (book.IsReferenceOnly && !staffOverride)
                 return null;
 
             if (member.IsSuspended)
@@ -39,13 +42,18 @@ namespace Lending
                 BookTitle = book.Title,
                 MemberId = member.MemberId,
                 CheckedOutDate = today,
-                DueDate = today.AddDays(LoanPeriodDays),
+                DueDate = book.IsReferenceOnly ? today : today.AddDays(LoanPeriodDays),
                 RenewalCount = 0
             };
         }
 
         public bool Renew(Loan loan, Book book, DateTime today)
         {
+            // A reference-only loan exists only under a same-day staff override,
+            // so it must not be extendable past today.
+            if (book.IsReferenceOnly)
+                return false;
+
             int holdCount = book.HoldCount ?? 0;
 
             if (holdCount > 0)

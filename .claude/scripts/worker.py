@@ -16,7 +16,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NOTES = os.path.join(os.path.dirname(HERE), "ticket-notes")
-ACC = os.path.join(NOTES, "accumulated.jsonl")
+sys.path.insert(0, HERE)
+import notes  # noqa: E402 - one file per session, concurrency-safe
 PROMPT_FILE = os.path.join(HERE, "worker_prompt.txt")
 
 transcript = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -76,9 +77,7 @@ def extract_user_turns(path):
 
 
 def write(record):
-    os.makedirs(NOTES, exist_ok=True)
-    with open(ACC, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record) + "\n")
+    notes.write_record(record)
 
 
 base = {
