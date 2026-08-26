@@ -1,237 +1,260 @@
-# Multi-session capture — test drive
+# Multi-session capture — run 2, with automatic attribution
 
-Five sessions against one imaginary ticket, `TEST-200`. The point is to watch
-reasoning get captured across sessions you never explicitly write up, then tune
-the gate until it stops missing things.
+Six working sessions. **Four belong to the ticket, two do not.** That is the
+point of this run: last time every session belonged to one ticket, so attribution
+was untestable and it simply asked you.
 
-**Nothing is posted to Jira by any of this.** The hook writes only to
-`.claude/ticket-notes/accumulated.jsonl`, which is gitignored.
+Now `/updatejira` fetches the ticket's summary and description and works out which
+sessions belong, on subject matter. If it gets that wrong, you will see it.
+
+Run 1's records are archived under `.claude/ticket-notes-archive/run1-sessions/`
+and its script as `SESSIONS-run1.md`, if you want them for tuning with
+`replay.py`.
 
 ---
 
-## How it works
+## Step 1 — make the ticket
 
-A `SessionEnd` hook fires when you end a session. It spawns a detached worker
-that reads your turns from the transcript, asks a headless `claude -p` to pull
-out decisions/constraints/rejections/deferrals, and appends one JSON record per
-session. `/updatejira` would later read those records and draft from them.
+Create a ticket on the test board. **Title and description matter now** — they
+are what attribution matches against. Use this:
+
+**Summary:**
+
+```
+Overdue handling: warn members and make late fees explainable
+```
+
+**Description:**
+
+```
+Members are surprised by late fees. Nothing warns them that a book has gone
+overdue, there is no way to see what they owe before they arrive at the desk,
+and desk staff have no way to explain or forgive a fee when the library was at
+fault - closure days, system outages, a book returned to the wrong branch.
+
+Scope:
+- Warn members as fees begin to accrue, not after they have built up
+- Let members and desk staff see what a member currently owes
+- Let staff waive a fee, recording who waived it and why
+
+Out of scope: the fee calculation itself. Finance owns the daily rate, the cap
+and the grace period. This ticket is about visibility and recourse, not amounts.
+```
+
+That last paragraph is load-bearing — session 6 is designed to be excluded by it.
+
+These instructions say `TEST-117`; substitute your key.
+
+## Step 2 — set credentials
+
+Attribution reads the ticket, so the Jira variables must be set in the terminal
+you launch from:
+
+```bash
+export JIRA_URL=https://datamaxx.atlassian.net
+export JIRA_USER=your.email@datamaxx.com
+export JIRA_TOKEN=paste-your-token-here
+```
+
+Without them, `ticket_context.py` says so plainly and the command falls back to
+asking you. That is correct behaviour but it is not what you are testing.
+
+## Step 3 — check it can read the ticket
+
+```bash
+python .claude/scripts/ticket_context.py TEST-117
+```
+
+You should see the summary and description as plain text. Do this before the
+sessions — a credentials problem is far easier to spot now than at the end.
+
+---
 
 ## The rules that matter
 
-1. **You have to actually end the session** for the hook to fire. `/exit`, or
-   close the window. Starting a new session without ending the old one captures
-   nothing.
-2. **Wait ~15 seconds** after ending before inspecting. The worker runs detached
-   and takes 5–10s for its inference call.
-3. **Don't let sessions bleed together.** One task per session — that is the
-   workflow being tested.
+1. **End each session** (`/exit`) or the hook never fires.
+2. **Wait ~15 seconds** before inspecting; the worker runs detached.
+3. **One task per session.**
+4. **Do not mention the ticket key in any session.** Attribution should work from
+   subject matter alone. Naming the key would short-circuit exactly what is being
+   tested, via `ticket_hint`.
+5. **Run them concurrently if you like** — each session writes its own record
+   file, so simultaneous endings are safe.
 
-## Running several chats at once
+Watch the records with:
 
-**Yes — concurrent sessions are the point, and they work.** Each session gets
-its own record file under `.claude/ticket-notes/sessions/`, written atomically,
-so simultaneous endings cannot corrupt each other. Verified with two sessions
-ending in the same second.
-
-Two things to know:
-
-- **`worker.log` interleaves.** It is a shared diagnostic log, so concurrent
-  workers scribble over each other in it. The *records* are unaffected — do not
-  read a mangled log line as evidence of a problem.
-- **Several tickets in one repo is handled.** The capture step does not know
-  which ticket a session belonged to, so selection happens at post time:
-  `/updatejira` shows the unposted records numbered, you say which belong to this
-  ticket, and only those are consumed. Records you leave alone stay available for
-  their own ticket. `notes.py` refuses to mark anything without an explicit
-  selection, so nothing gets attributed to the wrong ticket by default.
-- **Mention the ticket key in a session if you can.** The gate picks it up into
-  `ticket_hint`, which makes selection obvious later and triggers a warning when
-  unposted records name more than one ticket. Not required, just helpful.
-- **Nothing is truly destroyed.** Every record keeps its `transcript_path`, so
-  even a record consumed by the wrong ticket can be recovered with `replay.py`.
-
-## Watching it
-
-```
-python .claude/scripts/inspect.py        # what has been captured
-python .claude/scripts/inspect.py -v     # plus transcript paths and raw output
+```bash
+python .claude/scripts/inspect.py
 ```
 
 ---
 
-## Session 1 — a constraint that exists nowhere in the code
+# Sessions that BELONG to the ticket
 
-Start Claude Code in this repo. Then:
+## Session 1 — overdue notices
 
-> reference-only books can't be checked out at all right now. I want staff to be
-> able to override that, but only for same-day loans. don't add an IsStaff flag
-> to Member — HR owns that record and we can't modify it.
-
-then:
-
-> go ahead and implement it
-
-**End the session.** Wait, then inspect.
-
-*Watch for:* the HR constraint and the rejected `IsStaff` approach. Neither
-exists anywhere in the code — a diff-reading tool could never recover either.
-
----
-
-## Session 2 — the case that currently fails
-
-Fresh session.
-
-> the hold-count fallback in Renew treats an unknown hold count as zero and lets
-> the renewal through. I know that's sketchy. leave it alone for now, it's a
-> separate conversation — but I do want the max concurrent loans bumped from 5
-> to 8, members have been complaining.
+> members get no warning before late fees pile up. send an overdue notice at 7
+> days and again at 14 days past due. one notice per threshold — if the job runs
+> twice in a day nobody gets a second copy.
 
 then:
 
-> yep do it
+> implement it
 
-**End the session.** Inspect.
+## Session 2 — what a member owes
 
-*Watch for:* the hold-count deferral landing under `deferred`. In earlier
-testing this exact shape — "I know it's sketchy but leave it" — got dropped
-entirely. **This is the false negative you are hunting.** If `deferred` is empty
-here, the gate is broken.
-
----
-
-## Session 3 — should capture nothing
-
-Fresh session.
-
-> what's the current loan period and how many renewals are allowed?
-
-**End the session.** Inspect.
-
-*Watch for:* `gate=skip`, empty arrays, but **a record still written**. That is
-the design — "no summary" is recorded rather than the session vanishing, so a
-missed decision is visible instead of silent. Getting `skip` here is correct;
-this is the true-negative check.
-
----
-
-## Session 4 — a decision that reverses mid-session
-
-Fresh session.
-
-> suspended members should still be able to return books and pay fees, they just
-> can't borrow. add a CanReturn check.
+> desk staff need to see what a member owes before the member asks. add a way to
+> get the total outstanding for a member, and include fees on books they still
+> have out, not just returned ones.
 
 then:
 
-> actually wait — returning a book isn't a permission at all, anyone holding a
-> book can return it. drop the CanReturn idea. instead make the suspension
-> message explain why they're blocked, so staff can tell them.
+> go ahead
 
-**End the session.** Inspect.
+## Session 3 — staff waivers
 
-*Watch for:* whether it records the **final** decision or presents both as
-though they stood. The reversed idea belongs under `rejected`, not
-`decisions`. Getting this wrong writes a confidently misleading ticket.
-
----
-
-## Session 5 — several decisions at once
-
-Fresh session.
-
-> the fee cap is applied before the grace period credit is subtracted, so the
-> real maximum is $9.25 not $10. finance owns that ordering so don't change it.
-> but I do want two things: overdue notices at 7 and 14 days, and a way to see
-> the total outstanding fees for a member. one notice per threshold, don't spam
-> them if the job runs twice.
+> when the library is at fault — closure days, a book returned to the wrong
+> branch — staff need to forgive a fee. add a waive that records who waived it
+> and why. don't let the same fee be waived twice, and don't allow a blank
+> reason.
 
 then:
 
-> implement both
+> build it
 
-**End the session.** Inspect.
+*Watch for:* a decision about whether a waiver is all-or-nothing or partial.
+Whichever you land on, it should appear in the record.
 
-*Watch for:* it should capture the finance constraint, the two features, and the
-idempotency rule as **separate items**. A single-line capture would keep roughly
-one of the four — this is what "capture rich, compress late" is for.
+## Session 4 — how notices get delivered, and a rejection
+
+> for the overdue notices — I don't want to send email. we'd be signing up for a
+> mail provider, bounce handling, and a suppression list, and none of that is
+> ours to own. put the notices on the existing desk queue so staff mention it
+> when the member next comes in.
+
+then:
+
+> do that
+
+*Watch for:* the rejected email approach **and the reason**. This is the highest
+value item in the run — it exists nowhere in the code, and a diff-reading tool
+could never recover it.
 
 ---
 
-## Session 6 — the payoff: draft the ticket
+# Sessions that DO NOT belong
 
-Fresh session. **Do not** do any work in it. Just run:
+## Session 5 — the obvious decoy
 
-> /updatejira TEST-200
+> unrelated to what I've been doing: the hold queue. when several members are
+> waiting on a book, first in line should get it when it comes back, and a hold
+> should expire if they don't collect within 5 days.
 
-This is where the diff comes back in. The capture step (sessions 1-5) read only
-transcripts; this step reads the accumulated reasoning **and** `git diff HEAD`
-together:
+then:
 
-- *what changed* comes from the diff
-- *why* comes from the five captured sessions - none of which this conversation
-  was present for
-- anything in the diff that no captured session accounts for gets flagged
-- deferrals and rejected approaches become suggested `CLAUDE.md` lines, not
-  ticket content
+> implement that
 
-It will draft and stop. **Nothing posts** - `TEST-200` is imaginary, so say it is
-a dry run when it asks.
+*Watch for:* straightforward exclusion. Different feature, no subject-matter
+overlap.
 
-*Watch for:* whether the `Why` is genuinely built from sessions 1, 2, 4 and 5, or
-whether it has quietly reverted to describing the diff. That is the entire thesis
-of the project in one paragraph - if the draft reads like something a diff-only
-tool could have written, the capture is not earning its keep.
+## Session 6 — the hard decoy
 
-Also watch whether it admits the record is incomplete when session 3 (and
-anything the gate dropped) contributed nothing.
+> finance is raising the late fee cap from $10 to $12 starting next month. change
+> the cap constant. don't touch the ordering of the cap and the grace period
+> credit, that stays as it is.
+
+then:
+
+> yep
+
+*Watch for:* **this is the real test.** It is about fees, it mentions finance, and
+it touches the same file as sessions 1–3, so on keywords or file overlap it looks
+like it belongs. But the description says *"Out of scope: the fee calculation
+itself. Finance owns the daily rate, the cap and the grace period."* Excluding it
+requires actually reading the scope line instead of pattern-matching on "fee".
+
+If it includes session 6, that is the failure worth studying.
+
+---
+
+## Session 7 — draft the ticket
+
+Fresh session, no work in it:
+
+> /updatejira TEST-117
+
+It should:
+
+1. Print the ticket summary and description it fetched
+2. **Print its classification** — which records it is using, which it is
+   excluding and why — before showing any draft
+3. Draft from sessions 1–4 only
+4. Route the rejected email approach and any deferrals to `CLAUDE.md`
+   suggestions rather than the ticket body
+5. Post nothing until you approve
+
+### What to judge
+
+- **Did it exclude 5 and 6?** Six is the one that matters.
+- **Did it explain its exclusions** well enough that you could have caught a
+  wrong call?
+- **Is the `Why` assembled from four sessions this conversation never saw?** The
+  email rejection is the tell. If that reasoning is present and correct, the
+  premise is working.
+- **How does it handle `Also in this diff`?** Sessions 5 and 6 changed files too,
+  so their changes are in the diff while their reasoning is deliberately
+  excluded. It should notice code it cannot account for. This is genuinely
+  awkward and worth watching — arguably the flag should distinguish "no reason
+  recorded anywhere" from "reason recorded but belongs to another ticket."
+
+On approval it posts, then marks **only** the sessions it used. Sessions 5 and 6
+should still be unposted afterwards:
+
+```bash
+python .claude/scripts/notes.py --for-draft
+```
+
+Two records should remain, waiting for their own tickets.
 
 ---
 
 ## Then: tune
 
-```
-python .claude/scripts/inspect.py
-```
-
-Read every session's items and ask two questions:
-
-- **Anything missing?** A decision you made that is not in the list. This is the
-  failure that matters — it is unrecoverable once the session is gone.
-- **Anything junk?** Meta-observations like "user asked for a design
-  discussion", or restatements of what the code does. Cheap to ignore, but they
-  dilute the record.
-
-Then edit `.claude/scripts/worker_prompt.txt` and **replay** — re-score the same
-transcripts against the new prompt, no need to redo the sessions:
-
-```
-python .claude/scripts/replay.py            # re-score all, dry run
-python .claude/scripts/replay.py 2          # just session 2
-python .claude/scripts/replay.py --write    # save the new results
+```bash
+python .claude/scripts/replay.py            # re-score, dry run
+python .claude/scripts/replay.py 4          # just session 4
+python .claude/scripts/replay.py --write    # save
 ```
 
-Replay prints `<-- CHANGED` where a verdict moved, so you can see whether an
-edit fixed session 2 without breaking session 3.
+Edit `.claude/scripts/worker_prompt.txt`, replay, compare. `<-- CHANGED` marks
+verdicts that moved. Sessions are expensive to produce and cheap to re-score,
+which is what makes the loop worth having.
 
-That loop — edit prompt, replay, compare — is the whole point of the setup.
-Sessions are expensive to produce and cheap to re-score.
+Two things to look for in the records:
+
+- **Anything missing** — a decision you made that is not there. Unrecoverable
+  once the session is over, so this is the failure that matters.
+- **Anything junk** — meta-observations like "user asked for a design
+  discussion", or restatements of what the code already shows.
+
+New this run: **`skip_reason`.** A session the gate is confident held nothing is
+marked `NOTHING_TO_RECORD` and no longer counts as a gap. Only `UNCERTAIN` skips
+raise the incompleteness warning. That fixes the false alarm from run 1, where a
+bare question was reported as possibly missing decisions.
 
 ---
 
 ## Troubleshooting
 
-**Nothing captured at all.** The hook did not fire. Check
-`.claude/ticket-notes/worker.log` exists; if not, confirm you actually ended the
-session, and that `C:/Python314/python.exe` is still the right path in
-`.claude/settings.json`.
+**Nothing captured.** The hook did not fire. Check
+`.claude/ticket-notes/worker.log` exists, confirm you ended the session, and
+check the python path in `.claude/settings.json`.
 
-**`gate=error`, transcript missing.** The hook got a path that does not exist.
-Run `inspect.py -v` to see what it was handed.
+**`COULD NOT READ TICKET`.** Credentials missing or wrong key. Run
+`ticket_context.py` directly to see the error.
 
-**`gate=unparsed`.** The model replied with something other than clean JSON.
-`inspect.py -v` shows the raw text. Usually means the prompt needs tightening
-about output format.
+**`gate=unparsed`.** The model returned something other than clean JSON.
+`inspect.py -v` shows the raw text.
 
-**Worker seems to hang.** It has a 300s timeout and logs to
-`.claude/ticket-notes/worker.log`. Tail it.
+**`worker.log` looks garbled.** Concurrent workers share it; the records are
+unaffected.

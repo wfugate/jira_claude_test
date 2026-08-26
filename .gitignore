@@ -1,2 +1,4 @@
 # Local session capture. Never committed - machine-local working state.
 .claude/ticket-notes/
+.claude/ticket-notes-archive/
+__pycache__/
