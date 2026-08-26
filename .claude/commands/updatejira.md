@@ -148,6 +148,12 @@ something alone is *why* the work took the shape it did, that belongs in `Why`.
 Split them: `Why` gets "X was off the table, so we did Y"; `CLAUDE.md` gets "X
 stays as is."
 
+**Your own memory is not a substitute.** If a standing decision is already in
+your saved memory, suggest it for `CLAUDE.md` anyway. Memory is per-user and
+per-machine and is not in version control; `CLAUDE.md` is checked in and is what
+a teammate cloning the repo actually gets. Never drop a suggestion on the grounds
+that you already know it — that quietly turns a team record into a private one.
+
 **Never write to `CLAUDE.md` yourself.**
 
 ## The description line
