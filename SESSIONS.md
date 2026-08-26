@@ -134,6 +134,36 @@ one of the four — this is what "capture rich, compress late" is for.
 
 ---
 
+## Session 6 — the payoff: draft the ticket
+
+Fresh session. **Do not** do any work in it. Just run:
+
+> /updatejira TEST-200
+
+This is where the diff comes back in. The capture step (sessions 1-5) read only
+transcripts; this step reads the accumulated reasoning **and** `git diff HEAD`
+together:
+
+- *what changed* comes from the diff
+- *why* comes from the five captured sessions - none of which this conversation
+  was present for
+- anything in the diff that no captured session accounts for gets flagged
+- deferrals and rejected approaches become suggested `CLAUDE.md` lines, not
+  ticket content
+
+It will draft and stop. **Nothing posts** - `TEST-200` is imaginary, so say it is
+a dry run when it asks.
+
+*Watch for:* whether the `Why` is genuinely built from sessions 1, 2, 4 and 5, or
+whether it has quietly reverted to describing the diff. That is the entire thesis
+of the project in one paragraph - if the draft reads like something a diff-only
+tool could have written, the capture is not earning its keep.
+
+Also watch whether it admits the record is incomplete when session 3 (and
+anything the gate dropped) contributed nothing.
+
+---
+
 ## Then: tune
 
 ```
