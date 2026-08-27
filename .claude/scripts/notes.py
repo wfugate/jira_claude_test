@@ -29,10 +29,29 @@ SESSIONS = os.path.join(NOTES, "sessions")
 
 
 def write_record(rec):
-    """Write one session record atomically: temp file, then rename."""
+    """Write one session record atomically: temp file, then rename.
+
+    A session can end more than once - `claude -p --continue` fires the hook
+    after every call, each time for the same session id. Later firings see more
+    turns, so overwriting is usually right. But workers run detached and can
+    finish out of order, so an earlier, thinner record must never clobber a
+    fuller one: compare turn counts before replacing.
+    """
     os.makedirs(SESSIONS, exist_ok=True)
     name = rec.get("session_id") or ("nosid-%d-%d" % (time.time(), os.getpid()))
     final = os.path.join(SESSIONS, "%s.json" % name)
+
+    if os.path.exists(final):
+        try:
+            with open(final, encoding="utf-8") as fh:
+                existing = json.load(fh)
+        except Exception:
+            existing = {}
+        if existing.get("posted"):
+            return final          # already consumed by a ticket; leave it alone
+        if (existing.get("turns") or 0) > (rec.get("turns") or 0):
+            return final          # existing record is fuller; do not regress
+
     tmp = final + ".tmp%d" % os.getpid()
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(rec, fh, indent=2)

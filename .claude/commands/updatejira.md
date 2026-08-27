@@ -1,7 +1,7 @@
 ---
 description: Draft a ticket update from all sessions captured since the last post
 argument-hint: [TICKET-KEY]
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/ticket_context.py:*), Bash(python .claude/scripts/jira_comment.py:*)
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git add -N:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/ticket_context.py:*), Bash(python .claude/scripts/jira_comment.py:*)
 disable-model-invocation: true
 ---
 
@@ -12,6 +12,23 @@ disable-model-invocation: true
 Modified files: !`git status --short`
 
 Diff: !`git diff HEAD`
+
+## Step 0 — make new files visible to the diff
+
+`git diff HEAD` does not show untracked files, so brand-new source files are
+invisible to it — and new features are exactly where new files live. Run this
+first so the diff above is complete:
+
+```
+git add -N .
+```
+
+Intent-to-add: it registers the paths without staging content, and nothing is
+committed. Then re-read the diff:
+
+```
+git diff HEAD
+```
 
 ## Step 1 — read the ticket
 
