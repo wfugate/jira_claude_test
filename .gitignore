@@ -2,3 +2,5 @@
 .claude/ticket-notes/
 .claude/ticket-notes-archive/
 __pycache__/
+drafts/
+reports/
