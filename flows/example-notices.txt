@@ -1,9 +1,0 @@
-members get no warning before late fees pile up. send an overdue notice at 7 days and again at 14 days past due. one notice per threshold — if the job runs twice in a day nobody gets a second copy.
-
-implement it
-
-actually the thresholds shouldn't be hardcoded, ops will want to tune them without a deploy. make them configurable but keep 7 and 14 as the defaults.
-
-one more thing — don't send these by email. we'd be signing up for a mail provider, bounce handling, a suppression list, none of it ours to own. put them on the desk queue instead.
-
-do that
