@@ -1,0 +1,11 @@
+desk staff need to see what a member owes before the member asks. add a way to get a member's total outstanding.
+
+include a per-loan breakdown too so staff can point at which book.
+
+implement it
+
+actually drop the breakdown — staff told me they only ever read the total out loud, the detail just slows them down at the desk. total only.
+
+also include fees still accruing on books they haven't returned, not just returned ones. that's the part members have never been told about.
+
+do that

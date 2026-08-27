@@ -1,0 +1,7 @@
+unrelated to the fee work: the hold queue. when several members are waiting on a book, first in line gets it when it comes back.
+
+a hold expires if they don't collect within 5 days.
+
+implement that
+
+don't notify members that their hold is ready — same reason as before, no outbound messaging.
