@@ -154,6 +154,7 @@ def main():
         log("this was a ticket-update session, not work - recording as empty")
         base.update({"gate": "skip", "turns": len(turns),
                      "skip_reason": "NOTHING_TO_RECORD",
+                     "is_draft_session": True,
                      "summary": "Ran the ticket-update command; no development "
                                 "decisions made."})
         notes.write_record(base)

@@ -75,8 +75,17 @@ def load_records():
     return out
 
 
-def unposted():
-    return [r for r in load_records() if not r.get("posted")]
+def unposted(include_draft_sessions=False):
+    """Records not yet consumed by a ticket.
+
+    Sessions that were themselves /updatejira runs are kept on disk as an audit
+    trail but excluded here - they are not work, and listing them would put
+    permanent noise in front of every future draft.
+    """
+    out = [r for r in load_records() if not r.get("posted")]
+    if not include_draft_sessions:
+        out = [r for r in out if not r.get("is_draft_session")]
+    return out
 
 
 def _save(rec):
