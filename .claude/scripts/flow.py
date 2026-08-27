@@ -60,7 +60,10 @@ def main():
 
     print()
     for i, turn in enumerate(turns, 1):
-        cmd = ["claude", "-p"]
+        # acceptEdits is required: plain `claude -p` has no permission to edit
+        # files, so a flow saying "implement it" would produce reasoning and an
+        # empty diff. Fine here - this repo is a throwaway test fixture.
+        cmd = ["claude", "-p", "--permission-mode", "acceptEdits"]
         if i > 1:
             cmd.append("--continue")   # same session, turns accumulate
         cmd.append(turn)
