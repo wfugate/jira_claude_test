@@ -33,6 +33,20 @@ def log(msg):
     print("[%s] %s" % (time.strftime("%H:%M:%S"), msg), flush=True)
 
 
+def _is_source(path):
+    """Keep source files out of which the diff is made; drop everything else.
+
+    Sessions write to the memory store and to notes as a side effect, and those
+    were turning up in "files touched" as though they were part of the change.
+    """
+    low = path.replace("\\", "/").lower()
+    if "/.claude/" in low or "/memory/" in low:
+        return False
+    if os.path.basename(low) in ("memory.md", "claude.md"):
+        return False
+    return not low.endswith((".md", ".json", ".jsonl", ".log", ".txt"))
+
+
 def extract_user_turns(path):
     """User turns only - ~13% of transcript volume, most of the reasoning.
 
@@ -53,7 +67,7 @@ def extract_user_turns(path):
             tur = o.get("toolUseResult")
             if isinstance(tur, dict):
                 fp = tur.get("filePath") or tur.get("file_path")
-                if fp:
+                if fp and _is_source(str(fp)):
                     files.add(os.path.basename(str(fp)))
 
             if o.get("type") != "user" or o.get("isSidechain"):

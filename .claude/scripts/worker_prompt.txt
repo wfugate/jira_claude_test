@@ -25,6 +25,26 @@ consist of a slash command and approvals, or they read like the contents of a
 ticket comment rather than someone deciding something. Capturing those turns
 recycles a previous draft back into the next one, inventing reasoning nobody gave.
 
+### Three rules about which list an item goes in
+
+**1. Every item goes in exactly ONE list.** If something is both rejected and
+deferred, pick the one that describes it better and put it there only. Listing
+the same thing twice makes a short record read like a long one.
+
+**2. A superseded decision is NOT a decision.** When the user decides something
+and then reverses it in a later turn, the abandoned version goes in "rejected"
+and NOWHERE ELSE. Do not also list it under "decisions". Only what stands at the
+end of the session is a decision. Someone reading this six months from now must
+not see a reversed choice presented as current.
+
+**3. A reason for doing something is not a deferral.** "Include X, because Y is
+the part nobody has been told about" is a decision to include X, with Y as its
+motivation. It is NOT a deferral of Y. Only put something in "deferred" if the
+user explicitly declined to deal with it now - "leave it", "not now", "separate
+conversation", "I know it's sketchy but". If the thing was actually done in this
+session, it cannot be deferred. Read the turns again before writing a deferral,
+and check the user did not simply do it.
+
 Otherwise, err toward capturing. A marginal item costs a line someone skims past. A missed
 decision is gone forever, because the session is over and cannot be replayed.
 When unsure whether something is a decision, capture it.
