@@ -1,34 +1,34 @@
 ---
 description: Draft a ticket update from all sessions captured since the last post
 argument-hint: [TICKET-KEY]
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git add -N:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/ticket_context.py:*), Bash(python .claude/scripts/jira_comment.py:*)
+allowed-tools: Bash(python .claude/scripts/vcs.py:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/ticket_context.py:*), Bash(python .claude/scripts/jira_comment.py:*)
 disable-model-invocation: true
 ---
 
 # Update ticket $1
 
-## What changed in the working copy
+## Step 0 — read the working copy
 
-Modified files: !`git status --short`
-
-Diff: !`git diff HEAD`
-
-## Step 0 — make new files visible to the diff
-
-`git diff HEAD` does not show untracked files, so brand-new source files are
-invisible to it — and new features are exactly where new files live. Run this
-first so the diff above is complete:
+The version control system is behind one adapter, so this works the same whether
+the repo is git or AccuRev. Run all three:
 
 ```
-git add -N .
+python .claude/scripts/vcs.py prepare
+```
+```
+python .claude/scripts/vcs.py status
+```
+```
+python .claude/scripts/vcs.py diff
 ```
 
-Intent-to-add: it registers the paths without staging content, and nothing is
-committed. Then re-read the diff:
+`prepare` makes brand-new files visible to the diff where the VCS needs help with
+that. If any of these prints a `!!` failure line, **stop and tell me** — do not
+draft from a diff that may be incomplete. A silently short diff produces a ticket
+comment that describes less than was actually done.
 
-```
-git diff HEAD
-```
+Run `python .claude/scripts/vcs.py backend` if you want to know which VCS is
+active. If it warns the backend is unverified, say so in your summary.
 
 ## Step 1 — read the ticket
 
