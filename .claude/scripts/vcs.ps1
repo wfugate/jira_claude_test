@@ -126,10 +126,9 @@ function AccuRev-Status {
       and complete beats fast and wrong, because a missing file means a ticket
       comment that describes less work than was actually done.
 
-      UNVERIFIED: whether -O is accepted alongside --outgoing. The docs put -O in
-      the general workspace-status form and --outgoing among the element-
-      selection options, so it should be, but if this version of AccuRev rejects
-      the pair we retry without it and say so rather than reporting no changes.
+      -O IS valid alongside --outgoing: both are documented options of `stat`,
+      and the syntax permits combining them. The retry-without-O fallback below
+      stays anyway - it costs nothing and covers a version that disagrees.
 
       ALSO UNVERIFIED: the docs say the timestamp optimisation applies to the
       external-file search too, with no documented way to disable it there. A
@@ -152,8 +151,12 @@ function AccuRev-Diff {
 
       `accurev diff` with no version spec compares the workspace file against
       the active version in the workspace stream -- what you last kept. That is
-      the equivalent of `git diff HEAD`. -a widens it to all elements rather
-      than named ones.
+      the equivalent of `git diff HEAD`. -a means "all elements in the workspace,
+      output only those that differ" - confirmed against the docs, and it does
+      include changes made locally but not yet kept.
+
+      Note -a is not a modified-only filter; it is all-elements-that-differ. That
+      is what we want here. (`-m` would be the explicit modified-only form.)
     #>
     return Invoke-Vcs -Exe 'accurev' -Arguments @('diff', '-a')
 }
@@ -166,18 +169,23 @@ function AccuRev-TicketHistory {
       AccuRev already aggregates every change for a ticket -- which is the half
       of the problem this tool does NOT need to solve.
 
-      THE MOST SPECULATIVE COMMAND HERE. `hist` is the history command, but
-      whether it can filter on comment text is unconfirmed, so we dump recent
-      transactions and filter locally. That is a fallback, not a design.
+      `hist` has a comment filter for exactly this: -a searches all elements in
+      the depot, -c returns only transactions whose comments contain the string
+      (case-insensitive). So no local filtering is needed - an earlier version
+      dumped recent transactions and grepped them, which was a guess.
+
+      CAVEAT: this is depot-wide ELEMENT history filtered by comment, not a
+      guaranteed list of every transaction in the database. Good enough for "what
+      changed under this ticket"; do not present it as exhaustive.
+
+      Still never executed against a real workspace.
     #>
     param([string] $Key = '')
 
-    $r = Invoke-Vcs -Exe 'accurev' -Arguments @('hist', '-k', 'keep', '-t', 'now.100')
-    if ($r.Code -eq 0 -and $Key) {
-        $Kept = @($r.Out -split "`n" | Where-Object { $_ -match [regex]::Escape($Key) })
-        $r.Out = if ($Kept.Count) { $Kept -join "`n" } else { "(no transactions mentioning $Key)" }
+    if (-not $Key) {
+        return @{ Code = 0; Err = ''; Out = '(no ticket key given)' }
     }
-    return $r
+    return Invoke-Vcs -Exe 'accurev' -Arguments @('hist', '-a', '-c', $Key)
 }
 
 
