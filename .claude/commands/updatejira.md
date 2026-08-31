@@ -1,11 +1,25 @@
 ---
 description: Draft a ticket update from all sessions captured since the last post
 argument-hint: [TICKET-KEY]
-allowed-tools: Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/ticket_context.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1:*), Bash(echo $CLAUDE_CODE_SESSION_ID:*)
+allowed-tools: Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/ticket_context.ps1:*), Bash(echo $CLAUDE_CODE_SESSION_ID:*)
 disable-model-invocation: true
 ---
 
 # Update ticket $1
+
+<!-- jira_comment.ps1 is DELIBERATELY ABSENT from allowed-tools above.
+     Do not add it back.
+
+     Every read step is pre-authorised, so drafting runs without interruption.
+     The two calls that WRITE to Jira are not, so the harness prompts for each
+     one and shows the exact command and ticket key.
+
+     Why: the rule is "nothing reaches Jira without explicit human approval,
+     every time". With the script pre-authorised, the only thing standing
+     between a draft and a real comment was the instruction below telling you to
+     wait - and prose is the one guard here with no testable failure mode. The
+     permission prompt is a mechanism the model cannot talk itself past, and it
+     puts the ticket key in front of the human at the moment of the write. -->
 
 ## Step 0 — read the working copy
 
@@ -218,7 +232,10 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
 
 1. Show me the comment, the description line, and any `CLAUDE.md` suggestions.
 2. **Post nothing.** Wait for approval or corrections.
-3. On approval, if I have given you a real ticket key and Jira credentials:
+3. On approval, if I have given you a real ticket key and Jira credentials.
+   **Expect a permission prompt for each of these** - `jira_comment.ps1` is
+   deliberately not pre-authorised, so the harness asks before each write. That
+   prompt IS the approval gate; do not treat being asked as an error:
 
    ```
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1 -Issue $1        # comment on stdin
@@ -226,7 +243,12 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
    ```
 
    If this is a dry run, say so and skip posting.
-4. Either way, once I confirm we are done, consume **only the sessions you
+4. **The post is not finished until the records are consumed.** `jira_comment.ps1`
+   prints a `!!` reminder on success for exactly this reason: if the marking does
+   not happen, this reasoning is offered to the next ticket and published twice.
+   Do not stop after a successful post.
+
+   Once I confirm we are done, consume **only the sessions you
    used** — pass their numbers and the ticket key:
 
    ```

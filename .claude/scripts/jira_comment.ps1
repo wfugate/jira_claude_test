@@ -78,6 +78,9 @@ if ($AppendDescription) {
     Invoke-Jira -Method 'PUT' -Path "/rest/api/3/issue/$Issue" `
                 -Body @{ fields = @{ description = $Updated } } | Out-Null
     Write-Output "Appended one line to $Issue description."
+    Write-Output ''
+    Write-Output '   Reminder: if the comment is posted too, consume the sessions that fed it'
+    Write-Output "   with notes.ps1 -MarkPosted `"<session-ids>`" -Ticket $Issue"
     exit 0
 }
 
@@ -119,3 +122,21 @@ if ($DryRun) {
 
 $Result = Invoke-Jira -Method 'POST' -Path "/rest/api/3/issue/$Issue/comment" -Body $Body
 Write-Output "Posted comment $($Result.id) to $Issue"
+
+# NOTHING LINKS A SUCCESSFUL POST TO THE MARK STEP.
+#
+# If the post succeeds and -MarkPosted never runs - a failed description append,
+# a closed terminal, a distracted human - the records stay unposted and are
+# offered to the NEXT ticket. Reasoning that is already published gets posted a
+# second time, in the wrong place.
+#
+# This cannot be fixed here: this script does not know which records fed the
+# comment. So make the gap loud instead of silent, and print the command that
+# closes it.
+Write-Output ''
+Write-Output '!! NOT YET DONE: the sessions that fed this comment are still marked unposted.'
+Write-Output '   Until they are consumed they will be offered to the next ticket, and this'
+Write-Output '   reasoning would be published twice. Run, with the ids from the draft feed:'
+Write-Output ''
+Write-Output "     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkPosted `"<session-ids>`" -Ticket $Issue"
+Write-Output ''
