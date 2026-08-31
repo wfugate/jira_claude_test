@@ -64,7 +64,19 @@ function Write-SessionRecord {
             # none, falls back to the system ANSI codepage -- which silently
             # corrupts every non-ASCII character in our own BOM-less records.
             $Existing = [IO.File]::ReadAllText($Final, $Script:Utf8NoBom) | ConvertFrom-Json
-            if ($Existing.posted) { return $Final }         # already used by a ticket
+
+            # Already consumed by a ticket? Keep the posted flags but let the
+            # new content land. This is how a session drafted from live context
+            # still ends up with a full record: /updatejira marks the session
+            # posted BEFORE it has ended, then the worker fills in the reasoning
+            # afterwards. Refusing outright would leave a stub with no audit
+            # trail; ignoring the flags would let the ticket claim it twice.
+            if ($Existing.posted) {
+                $Record['posted']    = $true
+                $Record['posted_to'] = $Existing.posted_to
+                $Record['posted_at'] = $Existing.posted_at
+            }
+
             $OldTurns = [int]($Existing.turns | ForEach-Object { $_ })
             $NewTurns = [int]$Record.turns
             if ($OldTurns -gt $NewTurns) { return $Final }  # existing is fuller
@@ -171,6 +183,57 @@ function Set-RecordsPosted {
 }
 
 
+function Set-SessionPosted {
+    <#
+      Mark a session posted BEFORE it has a record.
+
+      /updatejira can now be run in the same session as the work, and drafts
+      from the live conversation rather than from a record -- because at that
+      moment no record exists: the hook only fires when the session ENDS.
+
+      Without this, that session's record would appear later as unposted and be
+      drafted into the NEXT ticket, duplicating reasoning already published. So
+      we write a stub marked posted; when the worker eventually runs,
+      Write-SessionRecord merges the real reasoning in and keeps these flags.
+    #>
+    param([Parameter(Mandatory)] [string] $SessionId,
+          [string] $Ticket = '')
+
+    if (-not (Test-Path $Script:Sessions)) {
+        New-Item -ItemType Directory -Path $Script:Sessions -Force | Out-Null
+    }
+    $Final = Join-Path $Script:Sessions "$SessionId.json"
+
+    # If a record already exists (the session ended between drafting and
+    # approval), mark it in place rather than replacing it.
+    if (Test-Path $Final) {
+        try {
+            $r = [IO.File]::ReadAllText($Final, $Script:Utf8NoBom) | ConvertFrom-Json
+            $h = @{}
+            foreach ($p in $r.PSObject.Properties) {
+                if ($p.Name -ne '_path') { $h[$p.Name] = $p.Value }
+            }
+        } catch { $h = @{ session_id = $SessionId } }
+    } else {
+        $h = @{
+            session_id      = $SessionId
+            ended           = ''
+            turns           = 0
+            gate            = 'pending'
+            summary         = 'Drafted from live session context; reasoning not yet extracted.'
+        }
+    }
+    $h['posted']    = $true
+    $h['posted_to'] = $Ticket
+    $h['posted_at'] = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')
+
+    $Tmp = "$Final.tmp$PID"
+    [IO.File]::WriteAllText($Tmp, ($h | ConvertTo-Json -Depth 6), $Script:Utf8NoBom)
+    Move-Item -LiteralPath $Tmp -Destination $Final -Force
+    return $Final
+}
+
+
 function Show-DraftFeed {
     <#
       What /updatejira reads: unposted records, numbered for selection.
@@ -238,6 +301,19 @@ function Show-DraftFeed {
 # --- Command line --------------------------------------------------------
 # Only acts when run directly. Dot-sourcing just loads the functions above.
 if ($MyInvocation.InvocationName -ne '.') {
+    if ($args -contains '-MarkSessionPosted') {
+        $i   = [array]::IndexOf($args, '-MarkSessionPosted')
+        $Sid = if ($i + 1 -lt $args.Count) { $args[$i + 1] } else { '' }
+        $Tik = if ($i + 2 -lt $args.Count) { $args[$i + 2] } else { '' }
+        if (-not $Sid) {
+            Write-Output 'Usage: notes.ps1 -MarkSessionPosted <session-id> [TICKET-KEY]'
+            exit 1
+        }
+        Set-SessionPosted -SessionId $Sid -Ticket $Tik | Out-Null
+        Write-Output "Marked session $Sid as posted$(if($Tik){" to $Tik"}) - its record will not be offered to a future ticket."
+        exit 0
+    }
+
     if ($args -contains '-MarkPosted' -or $args -contains '--mark-posted') {
         $idx = [array]::IndexOf($args, ($args | Where-Object { $_ -match '^-{1,2}[Mm]ark' } | Select-Object -First 1))
         $Selection = if ($idx -ge 0 -and $idx + 1 -lt $args.Count) { $args[$idx + 1] } else { $null }

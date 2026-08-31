@@ -1,7 +1,7 @@
 ---
 description: Draft a ticket update from all sessions captured since the last post
 argument-hint: [TICKET-KEY]
-allowed-tools: Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/ticket_context.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1:*)
+allowed-tools: Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/ticket_context.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1:*), Bash(echo $CLAUDE_CODE_SESSION_ID:*)
 disable-model-invocation: true
 ---
 
@@ -51,6 +51,35 @@ Every unposted session record, captured automatically at the end of each session
 Most of it did not happen in *this* conversation.
 
 !`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1`
+
+## This session counts too
+
+**Work done in THIS conversation is part of the update.** Do not assume this
+session is only for drafting -- doing the work and writing it up together is
+normal, and the reasoning for it is in front of you right now.
+
+There is no record for it. The capture hook only fires when a session ENDS, so
+nothing has been extracted for the conversation you are in. Use what you know
+directly: it is richer than any summary of it would be.
+
+Two obligations when you do:
+
+- **Label the provenance.** Say which reasoning came from this session and which
+  came from a stored record. I need to be able to tell what was reconstructed
+  from what was witnessed.
+- **Apply the same rules.** Reasoning still comes from what I said and decided,
+  not from what you inferred from the code. A choice you made on your own
+  initiative that I never confirmed is not a decision I made -- if it is in the
+  diff with no reasoning behind it, flag it as unexplained rather than
+  explaining it for me.
+
+**This session is also the strongest attribution signal you have.** I am running
+this command here, so this session is about $1 by definition. Use its subject
+matter, alongside the ticket text, to judge which stored records belong -- that
+matters most when the ticket itself is thin, which is usual.
+
+One caution: if this session covered more than one ticket's work, it is not
+wholly about $1. Say so and attribute only the part that belongs.
 
 ## Step 2 — work out which sessions belong to $1
 
@@ -104,11 +133,13 @@ Write a ticket update for **$1** and post it once I approve it.
 ### Where each part comes from
 
 - **What changed** comes from the diff above.
-- **Why it changed** comes from the captured reasoning, not from the diff and
-  not from this conversation. That record is the whole point — it holds
-  decisions from sessions that are over and cannot be asked again.
-- If the diff contains changes that no captured session accounts for, flag it in
-  **one line**. Do not speculate about the reason.
+- **Why it changed** comes from what I said and decided — in the stored records
+  from sessions that are over, and in this conversation if work happened here.
+  Never from the diff. That is the whole point: a diff can show what changed and
+  can never show why.
+- If the diff contains changes that neither a stored record nor this
+  conversation accounts for, flag it in **one line**. Do not speculate about the
+  reason.
 - If the captured record says sessions produced no reasoning, **say the record
   is incomplete.** Do not write as though it is whole. An update that admits a
   gap is more useful than one that reads complete and isn't.
@@ -145,6 +176,7 @@ Worth testing:
 
 Also in this diff: <one line, only if the diff has changes nothing accounts for>
 Record incomplete: <one line, only if sessions produced no reasoning>
+From this session: <one line naming what came from the current conversation rather than a stored record, only if any did>
 ```
 
 Omit any line that does not apply. Do not suggest a ticket title.
@@ -200,6 +232,16 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
    ```
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkPosted "1,3,5" -Ticket $1
    ```
+
+   Then, **if you used anything from this session**, mark this session posted too
+   so its record is not offered to a future ticket once it ends:
+
+   ```
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkSessionPosted $CLAUDE_CODE_SESSION_ID $1
+   ```
+
+   Skip that second command only if this session contributed nothing to the
+   comment.
 
    Never pass `--all` unless I have confirmed every unposted session belongs to
    $1. Records you leave unmarked stay available for their own ticket. Do not run

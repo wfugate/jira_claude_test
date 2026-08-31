@@ -28,6 +28,7 @@ $PromptFile = Join-Path $ScriptDir 'worker_prompt.txt'
 . (Join-Path $ScriptDir 'notes.ps1')   # dot-source: load functions, run nothing
 
 $MaxTurnChars = 4000    # one pathological paste should not dominate the prompt
+$Script:DroppedCommandTurns = 0   # how many /updatejira expansions were filtered
 $MaxTurns     = 60
 
 function Write-Log([string] $Message) {
@@ -97,12 +98,37 @@ function Get-UserTurns {
         if ($Text -like '*<local-command-caveat>*')  { continue }
         if ($Text.StartsWith('<system-reminder>'))   { continue }
 
+        # A /updatejira invocation expands the whole command file into a user
+        # turn. Drop THAT TURN, not the session.
+        #
+        # This used to discard the entire session, which was a real bug: doing
+        # work and then writing it up in the same session is the natural way to
+        # use this tool, and the guard threw the work's reasoning away before the
+        # gate ever ran. Filtering per turn keeps the work and loses only the
+        # command boilerplate -- which would otherwise recycle a previous draft
+        # into the next one.
+        if (Test-IsCommandExpansion $Text) { $Script:DroppedCommandTurns++; continue }
+
         $t = $Text.Trim()
         if ($t.Length -gt $MaxTurnChars) { $t = $t.Substring(0, $MaxTurnChars) }
         [void]$Turns.Add($t)
     }
 
     return @{ Turns = @($Turns); Files = @($Files.Keys | Sort-Object) }
+}
+
+
+function Test-IsCommandExpansion {
+    <#
+      Is this turn the /updatejira command file being expanded, rather than
+      something a human typed?
+
+      Matched on two distinctive phrases from the command body. Both must be
+      present, so an ordinary sentence mentioning one of them is not caught.
+    #>
+    param([string] $Text)
+    return ($Text -like '*Update ticket*' -and
+            $Text -like '*captured from earlier sessions*')
 }
 
 
@@ -231,20 +257,18 @@ $Extracted = Get-UserTurns -Path $Transcript
 $Turns = $Extracted.Turns
 Write-Log "extracted $($Turns.Count) user turns, $($Extracted.Files.Count) files touched"
 
-# A session spent running /updatejira is not a session that decided anything.
-# Recording it would feed a previous draft back into the next one, manufacturing
-# reasoning nobody ever gave. Detected by the command's own text appearing in
-# the turns.
-$IsDraftSession = $false
-foreach ($t in $Turns) {
-    if ($t -like '*Update ticket*' -and $t -like '*captured from earlier sessions*') {
-        $IsDraftSession = $true; break
-    }
+# Get-UserTurns has already dropped any /updatejira expansions. If that is ALL
+# there was, the session only ran the command and there is nothing to record.
+# But if real turns survive, this was work-then-write-up and the work must be
+# captured -- that is the whole point of filtering per turn rather than skipping
+# the session.
+if ($Script:DroppedCommandTurns -gt 0) {
+    Write-Log "dropped $($Script:DroppedCommandTurns) /updatejira command turn(s); $($Turns.Count) real turn(s) remain"
 }
-if ($IsDraftSession) {
-    Write-Log 'this was a ticket-update session, not work - recording as empty'
+if ($Script:DroppedCommandTurns -gt 0 -and $Turns.Count -eq 0) {
+    Write-Log 'nothing but the ticket-update command - recording as empty'
     $Record.gate             = 'skip'
-    $Record.turns            = $Turns.Count
+    $Record.turns            = 0
     $Record.skip_reason      = 'NOTHING_TO_RECORD'
     $Record.is_draft_session = $true
     $Record.summary          = 'Ran the ticket-update command; no development decisions made.'
