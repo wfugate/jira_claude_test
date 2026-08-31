@@ -188,11 +188,35 @@ function Invoke-Gate {
     $InFile  = "$Base.in.txt"
     $OutFile = "$Base.out.txt"
     $ErrFile = "$Base.err.txt"
+    $WorkDir = "$Base.cwd"
+
+    # RUN THE GATE OUTSIDE THE REPO. Not cosmetic - this fixes two bugs found in
+    # testing, both caused by the gate's own Claude session being filed under
+    # this repo:
+    #
+    #   1. `claude -p --continue` resumed the GATE session instead of the
+    #      developer's work session, because the gate's transcript was the more
+    #      recent one in the same project folder.
+    #   2. A gate session inside the repo loads this repo's
+    #      .claude/settings.json, so OUR OWN HOOK fired for it and wrote a
+    #      record for it. Those spurious records were only filtered by accident,
+    #      because the gate prompt happens to contain the command's phrases.
+    #
+    # Two things are needed. An empty temp working directory has no .claude, so
+    # no hook is registered there. AND CLAUDE_PROJECT_DIR must be cleared:
+    # Claude Code files a session under that variable when it is set, IGNORING
+    # the process working directory - and we inherit it from the hook, which
+    # inherited it from the session that triggered us. -WorkingDirectory alone
+    # was verified insufficient for exactly that reason.
+    $PrevProjectDir = $env:CLAUDE_PROJECT_DIR
 
     try {
         [IO.File]::WriteAllText($InFile, $Prompt, $Utf8)
+        New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+        $env:CLAUDE_PROJECT_DIR = $null
 
         $p = Start-Process -FilePath 'claude' -ArgumentList '-p' `
+                 -WorkingDirectory $WorkDir `
                  -RedirectStandardInput  $InFile `
                  -RedirectStandardOutput $OutFile `
                  -RedirectStandardError  $ErrFile `
@@ -203,8 +227,13 @@ function Invoke-Gate {
     } catch {
         return @{ Error = "could not run claude: $($_.Exception.Message)" }
     } finally {
+        # Restore: this process may go on to use the variable.
+        $env:CLAUDE_PROJECT_DIR = $PrevProjectDir
         foreach ($f in @($InFile, $OutFile, $ErrFile)) {
             if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+        }
+        if (Test-Path $WorkDir) {
+            Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
