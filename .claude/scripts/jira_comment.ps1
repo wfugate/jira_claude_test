@@ -30,6 +30,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Force UTF-8 on our own output. Without it, PowerShell best-fit-maps characters
+# the console codepage cannot represent - U+2014 silently becomes a plain "-".
+# That made -DryRun misrepresent the payload it was meant to let you inspect,
+# which is the one job a dry run has.
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
+
 # Shared plumbing lives in jira_lib.ps1 (auth, ADF conversion, the HTTP call,
 # change-log append). It has no param block, so it can be dot-sourced -- this
 # script's mandatory -Issue would otherwise be demanded of anything that tried
@@ -71,9 +77,21 @@ if ($AppendDescription) {
 if ($SelfTest) {
     $Text = 'Test comment from jira_comment.ps1. Auth and formatting are working.'
 } else {
-    # Read stdin as raw UTF-8. PowerShell's default would use the console
-    # codepage and mangle every em dash on the way to a real ticket.
-    $Text = [Console]::In.ReadToEnd()
+    # Read the raw stream and decode UTF-8 explicitly.
+    #
+    # [Console]::In is NOT the raw path - it decodes using
+    # [Console]::InputEncoding, which in a redirected process is the OEM codepage
+    # (IBM437 on this machine). Piping U+2014 in produced three CP437 characters,
+    # which ConvertTo-Adf then wrapped and POSTed. This is the last hop before a
+    # permanent Jira comment, so it is the worst place in the tool to mangle
+    # text.
+    #
+    # The Python original got this right (sys.stdin.buffer.read().decode) and the
+    # port lost it. Unlike the output side, [Console]::InputEncoding cannot be
+    # relied on here, so bypass it entirely.
+    $Text = (New-Object IO.StreamReader(
+                 [Console]::OpenStandardInput(),
+                 (New-Object System.Text.UTF8Encoding($false)))).ReadToEnd()
 }
 
 if (-not $Text -or -not $Text.Trim()) {
