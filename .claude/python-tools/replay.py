@@ -13,6 +13,7 @@ Without --write nothing is modified; results print for comparison only.
 import json
 import os
 import subprocess
+import tempfile
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +39,11 @@ prompt_base = open(PROMPT_FILE, encoding="utf-8").read()
 
 env = dict(os.environ)
 env["UPDATEJIRA_HOOK_GUARD"] = "1"
+# Gate sessions must be filed OUTSIDE this repo. Otherwise the gate
+# transcript becomes the newest in the project folder and
+# `claude --continue` resumes it instead of the developer's work session.
+env.pop("CLAUDE_PROJECT_DIR", None)
+_gate_cwd = tempfile.mkdtemp(prefix="updatejira-gate-")
 updated = []
 
 for i, rec in enumerate(records, 1):
@@ -58,7 +64,7 @@ for i, rec in enumerate(records, 1):
 
     proc = subprocess.run(
         ["claude", "-p", prompt_base + "\n\n---\n".join(turns[:MAX_TURNS])],
-        capture_output=True, text=True, timeout=300, env=env, cwd=HERE)
+        capture_output=True, text=True, timeout=300, env=env, cwd=_gate_cwd)
     out = (proc.stdout or "").strip()
     if out.startswith("```"):
         out = out.split("\n", 1)[-1]
