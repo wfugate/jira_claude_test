@@ -18,7 +18,11 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 NOTES = os.path.join(os.path.dirname(HERE), "ticket-notes")
 import notes  # noqa: E402
-PROMPT_FILE = os.path.join(HERE, "worker_prompt.txt")
+# The prompt lives with the PowerShell runtime, which is what actually runs in
+# production. These Python tools point at THAT file, not a copy: tuning must
+# edit the same prompt the hook uses, or replay would score a prompt nobody
+# runs.
+PROMPT_FILE = os.path.join(os.path.dirname(HERE), "scripts", "worker_prompt.txt")
 
 sys.path.insert(0, HERE)
 from worker import extract_user_turns, MAX_TURNS  # noqa: E402

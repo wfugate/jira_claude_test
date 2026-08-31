@@ -1,7 +1,7 @@
 ---
 description: Draft a ticket update from all sessions captured since the last post
 argument-hint: [TICKET-KEY]
-allowed-tools: Bash(python .claude/scripts/vcs.py:*), Bash(python .claude/scripts/notes.py:*), Bash(python .claude/scripts/ticket_context.py:*), Bash(python .claude/scripts/jira_comment.py:*)
+allowed-tools: Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/ticket_context.ps1:*), Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1:*)
 disable-model-invocation: true
 ---
 
@@ -13,13 +13,13 @@ The version control system is behind one adapter, so this works the same whether
 the repo is git or AccuRev. Run all three:
 
 ```
-python .claude/scripts/vcs.py prepare
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1 prepare
 ```
 ```
-python .claude/scripts/vcs.py status
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1 status
 ```
 ```
-python .claude/scripts/vcs.py diff
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1 diff
 ```
 
 `prepare` makes brand-new files visible to the diff where the VCS needs help with
@@ -27,7 +27,7 @@ that. If any of these prints a `!!` failure line, **stop and tell me** — do no
 draft from a diff that may be incomplete. A silently short diff produces a ticket
 comment that describes less than was actually done.
 
-Run `python .claude/scripts/vcs.py backend` if you want to know which VCS is
+Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/vcs.ps1 backend` if you want to know which VCS is
 active. If it warns the backend is unverified, say so in your summary.
 
 ## Step 1 — read the ticket
@@ -35,7 +35,7 @@ active. If it warns the backend is unverified, say so in your summary.
 Run this now, before anything else:
 
 ```
-python .claude/scripts/ticket_context.py $1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/ticket_context.ps1 -Issue $1
 ```
 
 You need the summary and description to decide which sessions belong. If it
@@ -50,7 +50,7 @@ does not expand inside a `!` block.)
 Every unposted session record, captured automatically at the end of each session.
 Most of it did not happen in *this* conversation.
 
-!`python .claude/scripts/notes.py --for-draft`
+!`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1`
 
 ## Step 2 — work out which sessions belong to $1
 
@@ -189,8 +189,8 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
 3. On approval, if I have given you a real ticket key and Jira credentials:
 
    ```
-   python .claude/scripts/jira_comment.py $1                        # comment on stdin
-   python .claude/scripts/jira_comment.py $1 --append-description "<the one line>"
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1 -Issue $1        # comment on stdin
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/jira_comment.ps1 -Issue $1 -AppendDescription "<the one line>"
    ```
 
    If this is a dry run, say so and skip posting.
@@ -198,7 +198,7 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
    used** — pass their numbers and the ticket key:
 
    ```
-   python .claude/scripts/notes.py --mark-posted 1,3,5 $1
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkPosted "1,3,5" -Ticket $1
    ```
 
    Never pass `--all` unless I have confirmed every unposted session belongs to
