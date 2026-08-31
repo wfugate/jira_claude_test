@@ -130,9 +130,13 @@ function Invoke-Jira {
         ErrorAction = 'Stop'
     }
     if ($Body) {
-        # -Depth matters. ConvertTo-Json defaults to 2 levels and would silently
-        # truncate a nested ADF document into unusable garbage.
-        $Args['Body']        = ($Body | ConvertTo-Json -Depth 20 -Compress)
+        # -Depth 100. The default of 2 truncates ADF instantly; 20 was not
+        # enough either. ADF nests deeply - a table cell containing
+        # nested bullets reaches depth 13 in ordinary use - and ConvertTo-Json
+        # TRUNCATES past the limit into something structurally plausible rather
+        # than failing. On the description PUT that is a permanent deletion of
+        # human-authored content, reported as success.
+        $Args['Body']        = ($Body | ConvertTo-Json -Depth 100 -Compress)
         $Args['ContentType'] = 'application/json; charset=utf-8'
     }
 
@@ -185,7 +189,7 @@ function Add-ChangeLogLine {
         # paragraphs rather than discarding it.
         $Doc = ConvertTo-Adf -Text $Existing
     } else {
-        $Doc = $Existing | ConvertTo-Json -Depth 30 | ConvertFrom-Json   # deep copy
+        $Doc = $Existing | ConvertTo-Json -Depth 100 | ConvertFrom-Json  # deep copy
     }
 
     $Content = @(if ($Doc.content) { $Doc.content } else { @() })
@@ -198,4 +202,44 @@ function Add-ChangeLogLine {
                    content = @(@{ type = 'text'; text = "$Stamp - $($Line.Trim())" }) }
 
     return @{ type = 'doc'; version = 1; content = $Content }
+}
+
+
+function Assert-DescriptionSurvived {
+    <#
+      Refuse to write a description that has lost any of the original.
+
+      This is an append-only operation by contract, but it is implemented as a
+      read-modify-write, so a serialisation fault is a permanent deletion of
+      someone else's writing. Depth limits are one way that happens; there will
+      be others. So rather than trusting the transform, check it: every original
+      node must still be present, verbatim, in what we are about to send.
+
+      Compares the serialised forms because ADF is a nested structure and a
+      node-by-node walk would have to re-implement the comparison ADF already
+      makes easy this way.
+    #>
+    param($Original, $Updated)
+
+    if (-not $Original) { return }   # nothing to lose
+
+    $Before = $Original | ConvertTo-Json -Depth 100 -Compress
+    $After  = $Updated  | ConvertTo-Json -Depth 100 -Compress
+
+    # Strip the outer braces: the original document is nested inside the new one,
+    # so its body must appear as a substring.
+    $Inner = $Before.Trim()
+    if ($Inner.StartsWith('{')) { $Inner = $Inner.Substring(1) }
+    if ($Inner.EndsWith('}'))   { $Inner = $Inner.Substring(0, $Inner.Length - 1) }
+
+    # The content array is what must survive; version/type are rebuilt.
+    $Marker = ($Original.content | ConvertTo-Json -Depth 100 -Compress)
+    if ($Marker -and $Marker.Length -gt 2) {
+        $Body = $Marker.Trim('[', ']')
+        if ($Body -and -not $After.Contains($Body)) {
+            throw ("Refusing to write the description: the existing content did " +
+                   "not survive the append intact. Nothing was sent. This is the " +
+                   "guard against silently deleting text somebody wrote.")
+        }
+    }
 }

@@ -51,21 +51,29 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 if ($AppendDescription) {
     $Stamp = Get-Date -Format 'yyyy-MM-dd'
 
+    # A read-modify-write, unlike posting a comment. The whole GET/append/PUT
+    # cycle happens inside this script: the existing description text is never
+    # handed to the model. That is deliberate -- it keeps this inside the data
+    # decision already made about source code.
+    #
+    # -DryRun takes THE SAME PATH, only stopping before the PUT. An earlier
+    # version previewed against an empty document instead, which meant the one
+    # safety valve in the tool structurally could not reveal a fault in the one
+    # destructive operation in the tool.
+    $Data    = Invoke-Jira -Method 'GET' -Path "/rest/api/3/issue/$Issue`?fields=description"
+    $Updated = Add-ChangeLogLine -Existing $Data.fields.description -Line $AppendDescription -Stamp $Stamp
+
+    # Refuse to send anything that has lost part of the original. Throws.
+    Assert-DescriptionSurvived -Original $Data.fields.description -Updated $Updated
+
     if ($DryRun) {
-        $Preview = Add-ChangeLogLine -Existing $null -Line $AppendDescription -Stamp $Stamp
         Write-Output "Would append to $Issue description:"
         Write-Output "  $Stamp - $($AppendDescription.Trim())"
         Write-Output ''
-        Write-Output ($Preview | ConvertTo-Json -Depth 20)
+        Write-Output 'The document that WOULD be sent (existing content verified intact):'
+        Write-Output ($Updated | ConvertTo-Json -Depth 100)
         exit 0
     }
-
-    # A read-modify-write, unlike posting a comment. Note the whole GET/append/
-    # PUT cycle happens inside this script: the existing description text is
-    # never handed to the model. That is deliberate -- it keeps this inside the
-    # data decision already made about source code.
-    $Data    = Invoke-Jira -Method 'GET' -Path "/rest/api/3/issue/$Issue`?fields=description"
-    $Updated = Add-ChangeLogLine -Existing $Data.fields.description -Line $AppendDescription -Stamp $Stamp
 
     Invoke-Jira -Method 'PUT' -Path "/rest/api/3/issue/$Issue" `
                 -Body @{ fields = @{ description = $Updated } } | Out-Null
