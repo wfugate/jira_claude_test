@@ -230,7 +230,7 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
    used** — pass their numbers and the ticket key:
 
    ```
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkPosted "1,3,5" -Ticket $1
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkPosted "<session-ids>" -Ticket $1
    ```
 
    Then, **if you used anything from this session**, mark this session posted too
@@ -243,8 +243,13 @@ Bad: `Updated LendingService.cs with various changes as discussed.`
    Skip that second command only if this session contributed nothing to the
    comment.
 
-   Never pass `--all` unless I have confirmed every unposted session belongs to
-   $1. Records you leave unmarked stay available for their own ticket. Do not run
+   **Pass the session ids shown in the feed, not the numbers.** The feed prints
+   an 8-character id beside each record; use those (comma-separated). Ordinals
+   are accepted but they are resolved against a list that can shift if any
+   record is written between the draft and the approval — which happens
+   routinely, and used to consume the wrong record.
+
+   Records you leave unmarked stay available for their own ticket. Do not run
    this before I approve.
 
 Nothing reaches Jira without my explicit approval.

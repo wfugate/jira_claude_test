@@ -11,14 +11,36 @@
 # intact.)
 #
 # Usage:
-#   notes.ps1 -ForDraft                          list unposted records, numbered
-#   notes.ps1 -MarkPosted "1,3" -Ticket ABC-12   consume ONLY those records
+#   notes.ps1                                        list unposted records
+#   notes.ps1 -MarkPosted <ids> -Ticket ABC-12       consume ONLY those records
+#   notes.ps1 -MarkSessionPosted <id> -Ticket ABC-12
+#
+# RECORDS ARE ADDRESSED BY SESSION ID, NOT BY POSITION. An earlier version
+# numbered them by position in a list sorted on LastWriteTime, and re-derived
+# that list at approval time. Any write in between - another session ending, a
+# worker firing, the posted-flag merge - renumbered everything, so the mark step
+# could consume a different record than the one shown. That was demonstrated: it
+# consumed another ticket's record and left this ticket's unposted. Ordinals are
+# still accepted, but they are resolved against the listing the caller was
+# shown, and an id is what gets matched.
 #
 # Dot-source it to get the functions:
 #   . "$PSScriptRoot\notes.ps1"
 
-$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Script:Notes    = Join-Path (Split-Path -Parent $ScriptDir) 'ticket-notes'
+param(
+    # Comma-separated session ids (preferred) or ordinals from the last listing.
+    [string] $MarkPosted        = '',
+    # A single session id, for a session that has not ended yet.
+    [string] $MarkSessionPosted = '',
+    # The ticket consuming them. A NAMED parameter -- it used to be read
+    # positionally as $args[$idx+2], which is the flag itself, so every record
+    # recorded posted_to = "-Ticket" and the audit trail was worthless.
+    [string] $Ticket            = ''
+)
+
+# $Script: scoped so dot-sourcing does not overwrite the caller's $ScriptDir.
+$Script:NotesScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Script:Notes    = Join-Path (Split-Path -Parent $Script:NotesScriptDir) 'ticket-notes'
 $Script:Sessions = Join-Path $Script:Notes 'sessions'
 
 # PowerShell 5.1's Out-File -Encoding utf8 writes a byte-order mark, which
@@ -149,18 +171,38 @@ function Set-RecordsPosted {
       reasoning to another AND consume records that belonged elsewhere. The
       caller must say which.
     #>
-    param([Parameter(Mandatory)] [int[]] $Indices,
+    param([Parameter(Mandatory)] [string[]] $Selectors,
           [string] $Ticket = '')
 
-    $Recs = @(Get-UnpostedRecords)     # see the note in Show-DraftFeed
-    $Bad  = $Indices | Where-Object { $_ -lt 1 -or $_ -gt $Recs.Count }
-    if ($Bad) {
-        throw "No such session(s): $($Bad -join ', ') (there are $($Recs.Count) unposted)"
+    $Recs   = @(Get-UnpostedRecords)     # see the note in Show-DraftFeed
+    $Chosen = @()
+    $Bad    = @()
+
+    foreach ($sel in $Selectors) {
+        $sel = "$sel".Trim()
+        if (-not $sel) { continue }
+
+        if ($sel -match '^[0-9]+$') {
+            # An ordinal: resolved here, against the current listing. Weaker.
+            $i = [int]$sel
+            if ($i -lt 1 -or $i -gt $Recs.Count) { $Bad += $sel; continue }
+            $Chosen += $Recs[$i - 1]
+        } else {
+            # A session id, full or a unique prefix. Cannot be shifted by a
+            # concurrent write, which is the whole point.
+            $hit = @($Recs | Where-Object { "$($_.session_id)".StartsWith($sel) })
+            if     ($hit.Count -eq 1) { $Chosen += $hit[0] }
+            elseif ($hit.Count -gt 1) { $Bad += "$sel (ambiguous, matches $($hit.Count))" }
+            else                      { $Bad += $sel }
+        }
+    }
+
+    if ($Bad.Count) {
+        throw "No such unposted session(s): $($Bad -join ', ') (there are $($Recs.Count) unposted)"
     }
 
     $Done = @()
-    foreach ($i in $Indices) {
-        $r = $Recs[$i - 1]
+    foreach ($r in $Chosen) {
         if ($r.gate -eq 'corrupt') { continue }
 
         # Rebuild as a hashtable so Write-SessionRecord can serialise it, and so
@@ -177,7 +219,7 @@ function Set-RecordsPosted {
         $Tmp = "$($r._path).tmp$PID"
         [IO.File]::WriteAllText($Tmp, ($h | ConvertTo-Json -Depth 6), $Script:Utf8NoBom)
         Move-Item -LiteralPath $Tmp -Destination $r._path -Force
-        $Done += $i
+        $Done += $r.session_id
     }
     return $Done
 }
@@ -260,7 +302,10 @@ function Show-DraftFeed {
             $Hints[$r.ticket_hint] = $true
             $HintText = "   ticket named in session: $($r.ticket_hint)"
         }
-        Write-Output "[$n] ended $($r.ended), $($r.turns) user turns$HintText"
+        # The id is what -MarkPosted matches on. The number is a convenience.
+        $Sid = "$($r.session_id)"
+        $Short = if ($Sid.Length -ge 8) { $Sid.Substring(0, 8) } else { $Sid }
+        Write-Output "[$n] $Short  ended $($r.ended), $($r.turns) user turns$HintText"
         if ($r.summary) { Write-Output "    summary: $($r.summary)" }
 
         foreach ($pair in @(@('decisions','DECISION'), @('constraints','CONSTRAINT'),
@@ -300,40 +345,68 @@ function Show-DraftFeed {
 
 # --- Command line --------------------------------------------------------
 # Only acts when run directly. Dot-sourcing just loads the functions above.
+#
+# Uses the param() block at the top rather than scanning $args by hand. The
+# hand-rolled version read the ticket as the argument after the selection, which
+# was the -Ticket flag itself, so posted_to was the literal string "-Ticket" on
+# every record -- destroying the audit trail that is the main way any
+# misattribution would be noticed.
 if ($MyInvocation.InvocationName -ne '.') {
-    if ($args -contains '-MarkSessionPosted') {
-        $i   = [array]::IndexOf($args, '-MarkSessionPosted')
-        $Sid = if ($i + 1 -lt $args.Count) { $args[$i + 1] } else { '' }
-        $Tik = if ($i + 2 -lt $args.Count) { $args[$i + 2] } else { '' }
-        if (-not $Sid) {
-            Write-Output 'Usage: notes.ps1 -MarkSessionPosted <session-id> [TICKET-KEY]'
+
+    function Test-TicketKey([string] $Key) {
+        return ($Key -match '^[A-Z][A-Z0-9]*-[0-9]+$')
+    }
+
+    if ($MarkSessionPosted) {
+        # A session id is a GUID. If CLAUDE_CODE_SESSION_ID failed to expand, the
+        # arguments shift and the TICKET KEY arrives here instead -- which used to
+        # write sessions/TEST-115.json, marked posted, and report success. Refuse
+        # loudly instead; requirement 7.
+        if ($MarkSessionPosted -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+            Write-Output "Refusing: '$MarkSessionPosted' is not a session id."
+            Write-Output 'CLAUDE_CODE_SESSION_ID probably did not expand. Nothing was written.'
             exit 1
         }
-        Set-SessionPosted -SessionId $Sid -Ticket $Tik | Out-Null
-        Write-Output "Marked session $Sid as posted$(if($Tik){" to $Tik"}) - its record will not be offered to a future ticket."
+        if ($Ticket -and -not (Test-TicketKey $Ticket)) {
+            Write-Output "Refusing: '$Ticket' does not look like a ticket key (expected e.g. ABC-123)."
+            exit 1
+        }
+        Set-SessionPosted -SessionId $MarkSessionPosted -Ticket $Ticket | Out-Null
+        Write-Output "Marked session $MarkSessionPosted as posted$(if($Ticket){" to $Ticket"}) - its record will not be offered to a future ticket."
         exit 0
     }
 
-    if ($args -contains '-MarkPosted' -or $args -contains '--mark-posted') {
-        $idx = [array]::IndexOf($args, ($args | Where-Object { $_ -match '^-{1,2}[Mm]ark' } | Select-Object -First 1))
-        $Selection = if ($idx -ge 0 -and $idx + 1 -lt $args.Count) { $args[$idx + 1] } else { $null }
-        $Ticket    = if ($idx + 2 -lt $args.Count) { $args[$idx + 2] } else { '' }
+    if ($MarkPosted) {
+        if ($Ticket -and -not (Test-TicketKey $Ticket)) {
+            Write-Output "Refusing: '$Ticket' does not look like a ticket key (expected e.g. ABC-123)."
+            Write-Output 'Nothing was marked.'
+            exit 1
+        }
+        if (-not $Ticket) {
+            Write-Output 'Refusing to mark without -Ticket. The record of which ticket'
+            Write-Output 'consumed which session is how a misattribution gets noticed.'
+            exit 1
+        }
 
-        if (-not $Selection -or $Selection -notmatch '\d') {
+        $Selectors = @($MarkPosted -split '[,\s]+' | Where-Object { $_ })
+        if (-not $Selectors.Count) {
             $n = @(Get-UnpostedRecords).Count
             Write-Output "Refusing to mark anything without a selection."
             Write-Output "There are $n unposted session(s). Pass the ones belonging to this ticket:"
-            Write-Output '    notes.ps1 -MarkPosted "1,3" -Ticket TICKET-KEY'
+            Write-Output '    notes.ps1 -MarkPosted <session-ids> -Ticket TICKET-KEY'
             exit 1
         }
-        $Indices = @($Selection -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { [int]$_ })
-        $Done    = Set-RecordsPosted -Indices $Indices -Ticket $Ticket
-        Write-Output "Marked $($Done.Count) session(s) as posted$(if($Ticket){" to $Ticket"}): $($Done -join ', ')"
+
+        try   { $Done = Set-RecordsPosted -Selectors $Selectors -Ticket $Ticket }
+        catch { Write-Output "Refusing: $($_.Exception.Message)"; exit 1 }
+
+        Write-Output "Marked $(@($Done).Count) session(s) as posted to $Ticket`: $(@($Done) -join ', ')"
         $Left = @(Get-UnpostedRecords).Count
         if ($Left -gt 0) {
             Write-Output "$Left session(s) still unposted - they stay available for another ticket."
         }
-    } else {
-        Show-DraftFeed
+        exit 0
     }
+
+    Show-DraftFeed
 }
