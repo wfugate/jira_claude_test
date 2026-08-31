@@ -122,7 +122,7 @@ function Invoke-Jira {
           [hashtable] $Body = $null)
 
     $Cred = Get-JiraCredentials
-    $Args = @{
+    $Req = @{
         Uri         = "$($Cred.Url)$Path"
         Method      = $Method
         Headers     = $Cred.Headers
@@ -136,8 +136,8 @@ function Invoke-Jira {
         # TRUNCATES past the limit into something structurally plausible rather
         # than failing. On the description PUT that is a permanent deletion of
         # human-authored content, reported as success.
-        $Args['Body']        = ($Body | ConvertTo-Json -Depth 100 -Compress)
-        $Args['ContentType'] = 'application/json; charset=utf-8'
+        $Req['Body']        = ($Body | ConvertTo-Json -Depth 100 -Compress)
+        $Req['ContentType'] = 'application/json; charset=utf-8'
     }
 
     try {

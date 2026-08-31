@@ -1,7 +1,7 @@
 # inspect.ps1 -- show what the hook has captured so far. Read-only.
 #
 #   inspect.ps1          every record, with its full extracted reasoning
-#   inspect.ps1 -Verbose  also show transcript paths and raw gate output
+#   inspect.ps1 -Full     also show transcript paths and raw gate output
 #
 # This is the window into the capture half. If something looks wrong in a ticket
 # draft, start here: it shows exactly what the gate pulled out of each session,
@@ -10,7 +10,9 @@
 # Unlike notes.ps1 -ForDraft, this shows POSTED records too, so you can see the
 # history of what went to which ticket.
 
-param([switch] $Verbose)
+# -Full, not -Verbose: -Verbose is a PowerShell common parameter and
+# shadowing it makes the script behave oddly under strict settings.
+param([switch] $Full)
 
 $ErrorActionPreference = 'Stop'
 # Force UTF-8 on our own output. PowerShell writes to a redirected stdout using
@@ -70,13 +72,20 @@ for ($i = 0; $i -lt $Records.Count; $i++) {
 
     if ($r.files)    { Write-Output "    files:      $(@($r.files) -join ', ')" }
     if ($r.error)    { Write-Output "    ERROR:      $($r.error)" }
-    if ($Verbose -and $r.raw)             { Write-Output "    raw:        $($r.raw)" }
-    if ($Verbose -and $r.transcript_path) { Write-Output "    transcript: $($r.transcript_path)" }
+    if ($Full -and $r.raw)             { Write-Output "    raw:        $($r.raw)" }
+    if ($Full -and $r.transcript_path) { Write-Output "    transcript: $($r.transcript_path)" }
 
     # Only an UNCERTAIN skip is a possible gap. A confident empty (a bare
     # question, a lookup) is a correct result and must not be reported as one --
     # otherwise the warning fires constantly and stops being read.
-    if ($Gate -in @('skip','empty','error','unparsed','corrupt') -and
+    # Content, not the gate label. A record can arrive gate='captured' with all
+    # four lists empty - the prompt permits it and the gate is non-deterministic -
+    # and 'captured' was in neither list here, so it printed as healthy. 'pending'
+    # is included so a pre-marked stub whose worker died shows up as the gap it is.
+    $ItemTotal = @($r.decisions).Count + @($r.constraints).Count +
+                 @($r.rejected).Count  + @($r.deferred).Count
+    if (($Gate -in @('skip','empty','error','unparsed','corrupt','pending') -or
+         $ItemTotal -eq 0) -and
         $r.skip_reason -ne 'NOTHING_TO_RECORD') {
         $Uncertain += $r
     }

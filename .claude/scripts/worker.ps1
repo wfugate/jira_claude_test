@@ -146,6 +146,25 @@ function Test-IsCommandExpansion {
       present, so an ordinary sentence mentioning one of them is not caught.
     #>
     param([string] $Text)
+
+    # THE STRUCTURAL MARKERS FIRST. A slash command produces TWO user turns: a
+    # small stub carrying the command name and args, then the expanded prose
+    # body. Only the body was matched, so a draft-only session ended with one
+    # surviving turn instead of zero -- and the "nothing but the command" branch
+    # requires zero. The draft-session guard was therefore unreachable, and every
+    # draft run left an ordinary unposted record for the next ticket to pick up.
+    #
+    # Worse, that stub contains <command-args>TEST-115</command-args>, so the
+    # gate could read a confident ticket_hint off a stale draft record - and the
+    # command gives an explicit key priority over subject matter. The rule meant
+    # to prevent misattribution was promoting the artefact.
+    if ($Text -like '*<command-name>*')    { return $true }
+    if ($Text -like '*<command-message>*') { return $true }
+    if ($Text -like '*<command-args>*')    { return $true }
+
+    # The prose body. Kept, but note it is coupled to two strings in
+    # updatejira.md: rename a heading and this silently stops matching. The
+    # structural markers above do not have that fragility.
     return ($Text -like '*Update ticket*' -and
             $Text -like '*captured from earlier sessions*')
 }
@@ -185,7 +204,8 @@ function Invoke-Gate {
     # Explicit UTF-8: the default would read this BOM-less file as ANSI and
     # corrupt any non-ASCII character in the prompt itself.
     $Utf8Read = New-Object System.Text.UTF8Encoding($false)
-    $Prompt = [IO.File]::ReadAllText($PromptFile, $Utf8Read) + ($Turns -join "`n---`n")
+    $Prompt = [IO.File]::ReadAllText($PromptFile, $Utf8Read) +
+              ($Turns -join "`n---`n") + "`n</turns>`n"
 
     $env:UPDATEJIRA_HOOK_GUARD = '1'
     $Started = Get-Date
@@ -262,11 +282,23 @@ function Invoke-Gate {
     $Text = $Text.Trim()
 
     # Strip a markdown fence if the model wrapped its JSON in one.
+    #
+    # Handles the single-line case too (```json {...} ```), which the previous
+    # split-on-first-newline version left fenced - so the record came back
+    # 'unparsed' for a reply that was otherwise perfectly good.
     if ($Text.StartsWith('```')) {
-        $Text = ($Text -split "`n", 2)[-1]
-        if ($Text.TrimEnd().EndsWith('```')) {
-            $Text = $Text.TrimEnd(); $Text = $Text.Substring(0, $Text.Length - 3)
+        $Text = $Text.Trim()
+        $NL = $Text.IndexOf("`n")
+        if ($NL -ge 0 -and $NL -lt 12) {
+            $Text = $Text.Substring($NL + 1)      # ```json
+{...}
+        } else {
+            $Text = $Text.TrimStart('`')          # ```json {...} on one line
+            if ($Text.StartsWith('json')) { $Text = $Text.Substring(4) }
         }
+        $Text = $Text.Trim()
+        if ($Text.EndsWith('```')) { $Text = $Text.Substring(0, $Text.Length - 3) }
+        $Text = $Text.Trim()
     }
 
     try   { return @{ Parsed = ($Text | ConvertFrom-Json) } }

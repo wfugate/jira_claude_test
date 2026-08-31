@@ -102,6 +102,16 @@ function Write-SessionRecord {
             $OldTurns = [int]($Existing.turns | ForEach-Object { $_ })
             $NewTurns = [int]$Record.turns
             if ($OldTurns -gt $NewTurns) { return $Final }  # existing is fuller
+
+            # Turn count alone was not enough. A re-firing over the SAME
+            # transcript yields the same count, so EQUAL counts passed the check
+            # above and a gate failure on the second run replaced the first run's
+            # extracted reasoning. Compare content too: a record holding items
+            # must never be replaced by one holding none.
+            $OldItems = @($Existing.decisions).Count + @($Existing.constraints).Count +
+                        @($Existing.rejected).Count  + @($Existing.deferred).Count
+            $NewItems = [int]$Record.item_count
+            if ($OldItems -gt 0 -and $NewItems -eq 0) { return $Final }
         } catch {
             # Unreadable existing record: fall through and replace it.
         }
@@ -315,7 +325,17 @@ function Show-DraftFeed {
             }
         }
 
-        if ($r.gate -in @('skip','empty','error','unparsed','corrupt')) {
+        # EMPTINESS IS ABOUT CONTENT, NOT THE GATE LABEL. The prompt permits
+        # substantive:true with all four lists empty, and the gate is
+        # non-deterministic - so a record can arrive gate='captured' holding
+        # nothing. 'captured' was in neither warning list and item_count was never
+        # consulted, so the feed printed a healthy-looking row and said nothing.
+        # 'pending' is included too: a pre-marked stub whose worker later died
+        # would otherwise sit unflagged forever.
+        $ItemTotal = @($r.decisions).Count + @($r.constraints).Count +
+                     @($r.rejected).Count  + @($r.deferred).Count
+        if ($r.gate -in @('skip','empty','error','unparsed','corrupt','pending') -or
+            $ItemTotal -eq 0) {
             # A confident empty is not a gap. Only an uncertain one is.
             if ($r.skip_reason -eq 'NOTHING_TO_RECORD') {
                 Write-Output '    (nothing to record - the gate read this and found no decision. Not a gap.)'

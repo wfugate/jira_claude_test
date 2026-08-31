@@ -15,6 +15,7 @@ on import, killing the caller.
 import json
 import os
 import subprocess
+import tempfile
 import sys
 import time
 
@@ -103,11 +104,19 @@ def run_gate(turns):
 
     env = dict(os.environ)
     env["UPDATEJIRA_HOOK_GUARD"] = "1"
+    # Give the gate its own working directory and drop
+    # CLAUDE_PROJECT_DIR, so its session is filed OUTSIDE this repo.
+    # Otherwise the gate transcript lands in the repo's project folder
+    # and becomes the newest one there, so `claude --continue` resumes
+    # the GATE session instead of the developer's work. The PowerShell
+    # runtime does this; these tools had not been updated.
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    _gate_cwd = tempfile.mkdtemp(prefix="updatejira-gate-")
 
     t0 = time.time()
     try:
         proc = subprocess.run(["claude", "-p", prompt], capture_output=True,
-                              text=True, timeout=300, env=env, cwd=HERE)
+                              text=True, timeout=300, env=env, cwd=_gate_cwd)
     except Exception as exc:
         return None, "", repr(exc)[:300]
 
