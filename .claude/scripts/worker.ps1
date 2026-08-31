@@ -386,7 +386,23 @@ if ($Turns.Count -eq 0) {
     exit 0
 }
 
-$Result = Invoke-Gate -Turns (@($Turns) | Select-Object -First $MaxTurns)
+# KEEP THE TAIL, NOT THE HEAD, and say so on the record.
+#
+# This used to send the first 60 turns. But the gate's rule is "only what stands
+# at the END of the session is a decision" - and it was being asked to apply that
+# to a view with the end missing. A choice made at turn 20 and reversed at turn 70
+# was recorded as current, silently, because $Record.turns reported the true count
+# while the gate had seen 60.
+#
+# The end of a session is where the standing decisions are. Keep that, and flag
+# the loss so the draft can say the record is partial.
+$Sent = @($Turns)
+if ($Sent.Count -gt $MaxTurns) {
+    $Record.turns_truncated = $Sent.Count - $MaxTurns
+    Write-Log "session has $($Sent.Count) turns; sending the last $MaxTurns to the gate"
+    $Sent = @($Sent | Select-Object -Last $MaxTurns)
+}
+$Result = Invoke-Gate -Turns $Sent
 
 if ($Result.Error) {
     Write-Log "gate failed: $($Result.Error)"

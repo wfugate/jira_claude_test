@@ -213,7 +213,14 @@ function Set-RecordsPosted {
 
     $Done = @()
     foreach ($r in $Chosen) {
-        if ($r.gate -eq 'corrupt') { continue }
+        # A corrupt record cannot be marked, so it stays in the unposted list
+        # forever - shifting every ordinal after it on every future run. Say so
+        # rather than skipping in silence; the file has to be dealt with by hand.
+        if ($r.gate -eq 'corrupt') {
+            Write-Output "  skipped an unreadable record: $($r._path)"
+            Write-Output '  It will keep appearing until you move or repair it.'
+            continue
+        }
 
         # Rebuild as a hashtable so Write-SessionRecord can serialise it, and so
         # the internal _path field does not leak into the file.

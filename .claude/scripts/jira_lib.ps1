@@ -150,7 +150,21 @@ function Invoke-Jira {
             404     { 'Issue not found, or your account cannot see it. Check the key.' }
             default { '' }
         }
-        throw "Jira returned $Code.`n$Hint`n$($_.Exception.Message)"
+        # Read the response body. PS 5.1 throws a WebException and does not
+        # surface it, so a 400 - which is what a malformed ADF PUT returns, i.e.
+        # the case that can damage a description - produced "Jira returned 400"
+        # and nothing else. Jira's 400 bodies name the offending field, which
+        # turns an unexplained failure into an actionable one.
+        $Detail = ''
+        if ($_.Exception.Response) {
+            try {
+                $Stream = $_.Exception.Response.GetResponseStream()
+                $Detail = (New-Object IO.StreamReader(
+                               $Stream, [Text.Encoding]::UTF8)).ReadToEnd()
+                if ($Detail.Length -gt 800) { $Detail = $Detail.Substring(0, 800) }
+            } catch { }
+        }
+        throw "Jira returned $Code.`n$Hint`n$Detail`n$($_.Exception.Message)"
     }
 }
 
