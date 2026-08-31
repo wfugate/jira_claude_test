@@ -32,10 +32,29 @@ $Script:DroppedCommandTurns = 0   # how many /updatejira expansions were filtere
 $MaxTurns     = 60
 
 function Write-Log([string] $Message) {
-    # Shared log, so concurrent workers interleave in it. Harmless -- it is
-    # diagnostics only, and the records themselves are separate files.
-    $Line = "[$(Get-Date -Format HH:mm:ss)] $Message"
-    Add-Content -LiteralPath (Join-Path $NotesDir 'worker.log') -Value $Line -Encoding UTF8
+    # DIAGNOSTICS MUST NEVER COST A RECORD.
+    #
+    # This log is shared, so concurrent workers contend for it and Add-Content
+    # throws "Stream was not readable". With $ErrorActionPreference = 'Stop' and
+    # nothing catching it, that killed the worker - and the first Write-Log call
+    # happens BEFORE the first Write-SessionRecord, so the session's reasoning
+    # was lost entirely, in silence, with the worker detached and its stderr
+    # going nowhere.
+    #
+    # An earlier version of this comment called the interleaving harmless. It was
+    # not: measured with four concurrent writers, three died on their first
+    # write. Two concurrent writers - what the original test used - collide
+    # rarely enough to look fine.
+    #
+    # The per-session record files cannot collide. This log sat in front of them
+    # and undid that.
+    try {
+        $Line = "[$(Get-Date -Format HH:mm:ss)] $Message"
+        Add-Content -LiteralPath (Join-Path $NotesDir 'worker.log') `
+                    -Value $Line -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        # Losing a log line is acceptable. Losing the record is not.
+    }
 }
 
 
@@ -273,6 +292,27 @@ $Record = @{
     ended           = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')
     end_reason      = $EndReason
     posted          = $false
+}
+
+# LAST-RESORT WRITE. "A record is written for every session" was only true as
+# long as nothing above the write threw. Anything unanticipated - a transcript
+# that cannot be opened, a full disk, a PowerShell edge case - killed the worker
+# silently, because it is detached and hidden and the session is already over.
+#
+# So: register a trap. Any terminating error writes an error record naming the
+# failure, then exits. The promise now holds against surprises, not just against
+# the failures that were thought of.
+trap {
+    try {
+        $Record.gate  = 'error'
+        $Record.error = "worker died: $($_.Exception.Message)"
+        if (-not $Record.ContainsKey('turns')) { $Record.turns = 0 }
+        Write-SessionRecord -Record $Record | Out-Null
+        Write-Log "worker died, wrote an error record: $($_.Exception.Message)"
+    } catch {
+        # Nothing left to try. Better to exit than to loop.
+    }
+    exit 0
 }
 
 if (-not $Transcript -or -not (Test-Path $Transcript)) {
