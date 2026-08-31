@@ -137,7 +137,10 @@ function Invoke-Gate {
     #>
     param([Parameter(Mandatory)] [string[]] $Turns)
 
-    $Prompt = (Get-Content -LiteralPath $PromptFile -Raw) + ($Turns -join "`n---`n")
+    # Explicit UTF-8: the default would read this BOM-less file as ANSI and
+    # corrupt any non-ASCII character in the prompt itself.
+    $Utf8Read = New-Object System.Text.UTF8Encoding($false)
+    $Prompt = [IO.File]::ReadAllText($PromptFile, $Utf8Read) + ($Turns -join "`n---`n")
 
     $env:UPDATEJIRA_HOOK_GUARD = '1'
     $Started = Get-Date

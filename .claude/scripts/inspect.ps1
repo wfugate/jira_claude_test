@@ -13,6 +13,11 @@
 param([switch] $Verbose)
 
 $ErrorActionPreference = 'Stop'
+# Force UTF-8 on our own output. PowerShell writes to a redirected stdout using
+# the console codepage, which mangles every em dash -- and this script's output
+# is read by /updatejira and lands in a real ticket comment, so mojibake here
+# becomes mojibake on the ticket.
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $ScriptDir 'notes.ps1')

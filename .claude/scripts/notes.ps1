@@ -24,6 +24,11 @@ $Script:Sessions = Join-Path $Script:Notes 'sessions'
 # PowerShell 5.1's Out-File -Encoding utf8 writes a byte-order mark, which
 # breaks strict JSON readers. This encoder omits it.
 $Script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+# Force UTF-8 on our own output. PowerShell writes to a redirected stdout using
+# the console codepage, which mangles every em dash -- and this script's output
+# is read by /updatejira and lands in a real ticket comment, so mojibake here
+# becomes mojibake on the ticket.
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 
 
 function Write-SessionRecord {
@@ -55,7 +60,10 @@ function Write-SessionRecord {
 
     if (Test-Path $Final) {
         try {
-            $Existing = Get-Content $Final -Raw | ConvertFrom-Json
+            # Explicit UTF-8. PS 5.1's Get-Content sniffs a BOM and, finding
+            # none, falls back to the system ANSI codepage -- which silently
+            # corrupts every non-ASCII character in our own BOM-less records.
+            $Existing = [IO.File]::ReadAllText($Final, $Script:Utf8NoBom) | ConvertFrom-Json
             if ($Existing.posted) { return $Final }         # already used by a ticket
             $OldTurns = [int]($Existing.turns | ForEach-Object { $_ })
             $NewTurns = [int]$Record.turns
@@ -85,7 +93,10 @@ function Get-SessionRecords {
     $Out = @()
     foreach ($f in (Get-ChildItem "$Script:Sessions\*.json" | Sort-Object LastWriteTime)) {
         try {
-            $r = Get-Content $f.FullName -Raw | ConvertFrom-Json
+            # Explicit UTF-8 -- see the note in Write-SessionRecord. Reading
+            # our own records with the default encoding mangled every em dash,
+            # and that text goes straight into ticket comments.
+            $r = [IO.File]::ReadAllText($f.FullName, $Script:Utf8NoBom) | ConvertFrom-Json
             Add-Member -InputObject $r -NotePropertyName '_path' -NotePropertyValue $f.FullName -Force
             $Out += $r
         } catch {
