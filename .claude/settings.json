@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Python314/python.exe C:/demo/lending-multi/.claude/scripts/hook.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/scripts/hook.py\""
           }
         ]
       }
