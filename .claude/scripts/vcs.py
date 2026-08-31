@@ -80,33 +80,54 @@ class AccuRev:
         AccuRev tracks new files differently: a file present in the workspace but
         not in the depot has status "external" and is not part of any diff until
         it is added with `accurev add`. So new files will NOT appear in diff
-        output - status() surfaces them separately instead.
+        output - status() surfaces them via --outgoing instead.
+
+        This is a real gap versus git, where `add -N` makes new files diffable
+        without committing. On AccuRev the draft step sees new files listed but
+        not their contents, so it must describe them from the file names and the
+        captured reasoning rather than from a diff.
         """
-        return 0, "(no prepare step for accurev)\n", ""
+        return 0, ("(no prepare step for accurev - new files appear in status "
+                   "as (external) but their contents are NOT in the diff)\n"), ""
 
     def status(self):
-        """Modified files, plus external (new, not yet added) files.
+        """Everything outstanding in the workspace, in one call.
 
-        `stat -m` is documented as searching the workspace for modified files.
-        IMPORTANT: it uses a timestamp optimisation and skips files whose
-        timestamps have not changed since the last update or modified-search,
-        which can silently omit a genuinely modified file. `-O` disables that
-        optimisation at the cost of a slower, full search. We pass -O because a
-        missing file means a ticket comment that describes an incomplete change,
-        which is worse than a slow command.
+        `--outgoing` is documented as displaying all files with any of the
+        statuses (member), (modified), (missing) or (external) - which is
+        modified files, new files not yet added, AND files deleted from the
+        workspace, together. That is the whole picture and it replaces the
+        earlier two-call `stat -m` plus `stat -x` approach. It also covers
+        (missing), which those two missed entirely: a file you deleted would have
+        been invisible.
 
-        `stat -x` lists external files - present in the workspace, unknown to the
-        depot. Those are new files, and without them new work is invisible.
+        `-O` overrides the timestamp optimisation. Without it, stat skips files
+        whose timestamps have not changed since the last update or
+        modified-search, which can silently omit a genuinely modified file. Slow
+        and complete beats fast and wrong: a missing file means a ticket comment
+        describing less work than was done.
 
-        UNVERIFIED: the -O and -x flags, and whether combining -m -O is valid.
+        UNVERIFIED: whether `-O` is accepted alongside `--outgoing`. The docs put
+        -O in the general workspace-status form and --outgoing among the
+        element-selection options, so it should be, but if AccuRev rejects the
+        pair, drop -O and accept that the optimisation may hide a file. The
+        fallback below handles that automatically.
+
+        Also unverified: the docs say the timestamp optimisation applies to the
+        external-file search too, and give no documented way to disable it there.
+        A brand-new file whose timestamp looks stale could be missed.
         """
-        rc_m, out_m, err_m = run(["accurev", "stat", "-m", "-O"])
-        rc_x, out_x, err_x = run(["accurev", "stat", "-x"])
-        out = out_m
-        if out_x.strip():
-            out += "\n--- external (new, not yet added to the depot) ---\n" + out_x
-        return (rc_m or rc_x), out, " | ".join(
-            e.strip() for e in (err_m, err_x) if e.strip())
+        rc, out, err = run(["accurev", "stat", "--outgoing", "-O"])
+        if rc != 0:
+            # -O may not combine with --outgoing on this version. Retry without
+            # it rather than reporting no changes.
+            rc2, out2, err2 = run(["accurev", "stat", "--outgoing"])
+            if rc2 == 0:
+                return rc2, out2 + (
+                    "\n(note: -O was rejected, so the timestamp optimisation is "
+                    "active and a modified file could be missing from this list)"
+                ), err2
+        return rc, out, err
 
     def diff(self):
         """All elements, workspace against the version last kept.
