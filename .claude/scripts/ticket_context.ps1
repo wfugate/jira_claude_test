@@ -34,8 +34,10 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 # Credentials missing is a normal condition, not a crash: a developer may not
 # have set them up yet. Say so clearly and let the caller ask instead.
 foreach ($v in @('JIRA_URL', 'JIRA_USER', 'JIRA_TOKEN')) {
-    if (-not (Get-Item "env:$v" -ErrorAction SilentlyContinue).Value) {
-        Write-Output "COULD NOT READ TICKET $Issue - $v is not set"
+    # Get-EnvSetting, not $env: -- the persisted user value counts even when the
+    # app was launched before it was set. See jira_lib.ps1 for why.
+    if (-not (Get-EnvSetting $v)) {
+        Write-Output "COULD NOT READ TICKET $Issue - $v is not set anywhere (process, user or machine environment)"
         Write-Output 'Attribution cannot be automatic without the ticket. Ask which sessions belong before drafting.'
         exit 0
     }

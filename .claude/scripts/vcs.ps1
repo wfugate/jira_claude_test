@@ -254,13 +254,38 @@ function AccuRev-TicketHistory {
 
 # ---------------------------------------------------------------------------
 
+function Get-EnvSetting {
+    # Process environment first, then the PERSISTED user and machine values.
+    #
+    # A process inherits its environment at launch, so a user-level variable set
+    # after the Claude Code desktop app is already running is invisible to it and
+    # to everything it spawns until the app restarts -- while a terminal opened
+    # afterwards sees it immediately. The same command then works by hand and
+    # fails inside Claude, which looks like a broken tool. Reading the registry
+    # scopes directly finds the value whenever it was set.
+    #
+    # Duplicated from jira_lib.ps1 rather than shared: this file is the VCS
+    # boundary and deliberately depends on nothing else.
+    param([Parameter(Mandatory)] [string] $Name)
+
+    foreach ($Scope in @('Process', 'User', 'Machine')) {
+        try {
+            $v = [Environment]::GetEnvironmentVariable($Name, $Scope)
+            if ($v) { return $v }
+        } catch { }
+    }
+    return $null
+}
+
+
 function Get-Backend {
     # Returns @{ Name; Reason }. Throws rather than guessing.
-    if ($env:UPDATEJIRA_VCS) {
-        switch ($env:UPDATEJIRA_VCS.Trim().ToLower()) {
+    $Override = Get-EnvSetting 'UPDATEJIRA_VCS'
+    if ($Override) {
+        switch ($Override.Trim().ToLower()) {
             'git'     { return @{ Name = 'git';     Reason = 'UPDATEJIRA_VCS=git' } }
             'accurev' { return @{ Name = 'accurev'; Reason = 'UPDATEJIRA_VCS=accurev' } }
-            default   { throw "UPDATEJIRA_VCS='$env:UPDATEJIRA_VCS' is not a known backend (git or accurev)" }
+            default   { throw "UPDATEJIRA_VCS='$Override' is not a known backend (git or accurev)" }
         }
     }
     if (Test-Path (Join-Path $RepoRoot '.git'))       { return @{ Name = 'git';     Reason = 'found .git' } }

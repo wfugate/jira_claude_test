@@ -16,6 +16,35 @@ $Script:JiraTimeoutSec = 30
 $Script:AdfBlockTypes = @('paragraph', 'heading', 'listItem', 'blockquote', 'codeBlock')
 
 
+function Get-EnvSetting {
+    <#
+      Read a setting from the process environment, falling back to the
+      PERSISTED user and machine values.
+
+      WHY THE FALLBACK MATTERS. A process inherits its environment at launch.
+      Set a user-level variable after the Claude Code desktop app is already
+      running and the app never sees it -- nor does any subprocess it spawns --
+      until the app is restarted. Meanwhile a terminal opened afterwards picks
+      it up immediately, so the same command works by hand and fails inside
+      Claude. That looks like a broken tool, and it cost a debugging cycle twice
+      before this fallback existed.
+
+      Reading the User and Machine scopes goes to the registry directly, so the
+      value is found whenever it was set. Process scope still wins, so a
+      deliberate per-session override behaves as expected.
+    #>
+    param([Parameter(Mandatory)] [string] $Name)
+
+    foreach ($Scope in @('Process', 'User', 'Machine')) {
+        try {
+            $v = [Environment]::GetEnvironmentVariable($Name, $Scope)
+            if ($v) { return $v }
+        } catch { }   # Machine scope can be unreadable under some policies
+    }
+    return $null
+}
+
+
 function Get-JiraCredentials {
     <#
       Credentials come from the environment, never from a file in the repo.
@@ -29,15 +58,18 @@ function Get-JiraCredentials {
                     single commonest cause of a 401 here.
         JIRA_TOKEN  an API token from id.atlassian.com
     #>
-    $Url   = $env:JIRA_URL
-    $User  = $env:JIRA_USER
-    $Token = $env:JIRA_TOKEN
+    $Url   = Get-EnvSetting 'JIRA_URL'
+    $User  = Get-EnvSetting 'JIRA_USER'
+    $Token = Get-EnvSetting 'JIRA_TOKEN'
 
     $Missing = @()
     if (-not $Url)   { $Missing += 'JIRA_URL' }
     if (-not $User)  { $Missing += 'JIRA_USER' }
     if (-not $Token) { $Missing += 'JIRA_TOKEN' }
-    if ($Missing.Count) { throw "Not set: $($Missing -join ', ')" }
+    if ($Missing.Count) {
+        throw ("Not set: $($Missing -join ', '). Checked the process, user and " +
+               "machine environments. Set them at user level - see INSTALL.md step 3.")
+    }
 
     # Jira Cloud uses HTTP basic auth with the API token as the password.
     $Auth = [Convert]::ToBase64String(
