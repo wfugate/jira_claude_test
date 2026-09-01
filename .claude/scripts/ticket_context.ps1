@@ -64,8 +64,19 @@ if ($Desc -is [string]) {
 $Lines = @($Text -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $Text  = $Lines -join "`n"
 
+# The watermark for the session search: when this tool last commented here.
+# Printed even when empty, so the caller can tell "never written up" from
+# "I forgot to look".
+$LastUpdate = ''
+try { $LastUpdate = Get-LastPostDate -Issue $Issue } catch { $LastUpdate = '' }
+
 Write-Output "TICKET: $Issue"
 Write-Output "SUMMARY: $Summary"
+if ($LastUpdate) {
+    Write-Output "LAST_UPDATE: $LastUpdate   (only read sessions modified after this)"
+} else {
+    Write-Output 'LAST_UPDATE: (none - no change log yet, so consider every session)'
+}
 Write-Output 'DESCRIPTION:'
 if ($Text) {
     Write-Output $Text.Substring(0, [Math]::Min($MaxDescChars, $Text.Length))

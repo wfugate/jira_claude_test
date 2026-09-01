@@ -147,7 +147,12 @@ function Invoke-Jira {
         $Hint = switch ($Code) {
             401     { 'Auth rejected. Check JIRA_USER is your full email address and the token is current.' }
             403     { 'Authenticated but not permitted. Can your account comment on this project?' }
-            404     { 'Issue not found, or your account cannot see it. Check the key.' }
+            # A 404 on an issue endpoint does NOT mean the key is wrong. Jira
+            # answers 404 rather than 401 so it does not reveal whether an issue
+            # exists to a caller it has not authenticated -- so an expired token
+            # looks exactly like a typo. This hint used to say "check the key",
+            # and an expired token cost a full debugging cycle chasing the key.
+            404     { 'Issue not found, OR the token is expired/invalid - Jira returns 404 rather than 401 on issue reads so it does not leak whether an issue exists. Check auth first: a GET on /rest/api/3/myself returns 401 if the token is the problem, and 200 if the key is.' }
             default { '' }
         }
         # Read the response body. PS 5.1 throws a WebException and does not
@@ -179,6 +184,74 @@ function Test-HasChangeLogHeading {
         if ($Text.Trim().ToLower() -eq 'change log') { return $true }
     }
     return $false
+}
+
+
+function Get-LastPostDate {
+    <#
+      When did this tool last write up this ticket? Returns an ISO timestamp, or
+      '' if it never has.
+
+      THIS IS THE WATERMARK, and it is why no local state is needed: Jira
+      already records when we posted, on the comment itself, to the
+      millisecond. Nothing has to be written to the ticket for the sole purpose
+      of being read back -- which is what the dated change-log line was.
+
+      Only comments by the authenticated account count. A colleague's comment is
+      not evidence that this tool wrote anything up.
+
+      KNOWN EDGE: if the developer hand-comments on the ticket after a post, the
+      watermark advances to that, and sessions in between are skipped. Rare, and
+      it fails toward saying too little rather than republishing, which is the
+      safer direction.
+    #>
+    param([Parameter(Mandatory)] [string] $Issue)
+
+    try {
+        $Me = Invoke-Jira -Method 'GET' -Path '/rest/api/3/myself'
+    } catch {
+        return ''   # cannot identify ourselves; caller falls back to no window
+    }
+
+    $c = Invoke-Jira -Method 'GET' `
+             -Path "/rest/api/3/issue/$Issue/comment`?orderBy=-created&maxResults=25"
+
+    foreach ($x in @($c.comments)) {
+        if ($x.author.accountId -eq $Me.accountId) { return [string]$x.created }
+    }
+    return ''
+}
+
+
+function Get-LastChangeLogDate {
+    <#
+      The date of the most recent change-log entry, or '' if there is none.
+
+      THIS IS THE WATERMARK, and it is why the tool needs no local state: Jira
+      already records what has been written up. Bounding the session search by
+      it is what stops a second run re-reading the sessions the first run
+      already posted.
+
+      Entries are written as "<yyyy-MM-dd HH:mm> - <line>" by Add-ChangeLogLine.
+      We take the largest value found rather than the last node, because a human
+      may have inserted a line by hand out of order.
+
+      The time is optional in the pattern on purpose: entries written before the
+      stamp gained a time still parse, and degrade to that day's midnight. That
+      is the old day-granular behaviour for old entries only, rather than a
+      crash or a silently ignored watermark.
+
+      String comparison is safe here because the format sorts lexicographically.
+    #>
+    param($Doc)
+
+    $Best = ''
+    foreach ($Node in @($Doc.content)) {
+        $Text = (@($Node.content) | ForEach-Object { $_.text }) -join ''
+        $m = [regex]::Match($Text, '^\s*(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?)\s*-\s')
+        if ($m.Success -and $m.Groups[1].Value -gt $Best) { $Best = $m.Groups[1].Value }
+    }
+    return $Best
 }
 
 

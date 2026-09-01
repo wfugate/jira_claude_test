@@ -34,6 +34,19 @@ $Raw = (New-Object IO.StreamReader(
             [Console]::OpenStandardInput(),
             (New-Object System.Text.UTF8Encoding($false)))).ReadToEnd()
 
+# --- TEMPORARY PROBE -- remove after the SessionEnd firing test ----------
+# Records that this hook ran AT ALL, before the guard and before the spawn.
+# Without it, "no record appeared" is ambiguous between three causes: the hook
+# never fired, the hook fired but was guarded, or the worker died after being
+# spawned. Writes outside the repo so it survives a clean checkout.
+try {
+    Add-Content -LiteralPath (Join-Path $env:TEMP 'sessionend-probe.log') `
+        -Value ("{0}  guard={1}  {2}" -f (Get-Date -Format 'HH:mm:ss'),
+                                          $env:UPDATEJIRA_HOOK_GUARD,
+                                          ($Raw -replace '\s+', ' ')) `
+        -ErrorAction SilentlyContinue
+} catch { }
+
 # --- The recursion guard -------------------------------------------------
 # Set means: this session was started by our own machinery, not by a person.
 if ($env:UPDATEJIRA_HOOK_GUARD) { exit 0 }

@@ -22,7 +22,11 @@
 
 param(
     [Parameter(Position = 0)] [string] $Action = '',
-    [Parameter(Position = 1)] [string] $Ticket = ''
+    [Parameter(Position = 1)] [string] $Ticket = '',
+    # The last write-up's timestamp. Bounds the diff the same way it bounds the
+    # session search: everything since this ticket was last written up,
+    # committed or not.
+    [string] $Since = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,7 +87,66 @@ function Git-Prepare {
 }
 
 function Git-Status { return Invoke-Vcs -Exe 'git' -Arguments @('status', '--short') }
-function Git-Diff   { return Invoke-Vcs -Exe 'git' -Arguments @('diff', 'HEAD') }
+
+function Git-Diff {
+    <#
+      Everything written up by this run, committed or not.
+
+      THREE SOURCES, in order of preference. Each exists because the one before
+      it returned an empty diff for work that was really there, and an empty
+      diff reads downstream as "nothing changed" rather than as a failure.
+
+        1. -Since given: the commit at the watermark, against the working tree.
+           Covers committed and uncommitted work in one command. Preferred.
+        2. `git diff HEAD`: uncommitted work only. Correct when there is no
+           watermark, i.e. the ticket has never been written up.
+        3. Branch against master/main, when the working copy is clean. Only
+           reaches work committed on a feature branch -- it cannot see work
+           committed straight onto master, which is what forced source 1.
+
+      Whichever is used ANNOUNCES ITSELF. Silently changing where the diff came
+      from would be worse than the empty diff it fixes.
+    #>
+    param([string] $Since = '')
+
+    # Source 1. `git diff <base>` with no second ref compares that commit
+    # against the WORKING TREE, so it spans both committed and uncommitted work.
+    if ($Since) {
+        $b = Invoke-Vcs -Exe 'git' -Arguments @('rev-list', '-1', "--before=$Since", 'HEAD')
+        $Base = if ($b.Code -eq 0) { $b.Out.Trim() } else { '' }
+        if ($Base) {
+            $d = Invoke-Vcs -Exe 'git' -Arguments @('diff', $Base)
+            if ($d.Code -eq 0 -and $d.Out -and $d.Out.Trim()) {
+                $d.Out = "(everything since the last write-up: $($Base.Substring(0,7)) against the working tree)`n`n" + $d.Out
+                return $d
+            }
+            if ($d.Code -eq 0) { return $d }   # genuinely nothing since then
+        }
+    }
+
+    $r = Invoke-Vcs -Exe 'git' -Arguments @('diff', 'HEAD')
+    if ($r.Code -ne 0)            { return $r }
+    if ($r.Out -and $r.Out.Trim()) { return $r }
+
+    $Branch = (Invoke-Vcs -Exe 'git' -Arguments @('rev-parse', '--abbrev-ref', 'HEAD')).Out.Trim()
+
+    foreach ($Base in @('master', 'main')) {
+        if ($Base -eq $Branch) { continue }
+        $v = Invoke-Vcs -Exe 'git' -Arguments @('rev-parse', '--verify', '--quiet', $Base)
+        if ($v.Code -ne 0 -or -not $v.Out.Trim()) { continue }
+
+        $n = Invoke-Vcs -Exe 'git' -Arguments @('rev-list', '--count', "$Base...HEAD")
+        if ($n.Code -ne 0 -or [int]($n.Out.Trim()) -eq 0) { continue }
+
+        $d = Invoke-Vcs -Exe 'git' -Arguments @('diff', "$Base...HEAD")
+        if ($d.Code -eq 0 -and $d.Out -and $d.Out.Trim()) {
+            $d.Out = "(working copy is clean - this diff is $Branch against $Base, i.e. work already committed on this branch)`n`n" + $d.Out
+            return $d
+        }
+    }
+
+    return $r
+}
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +294,7 @@ if ($Action -eq 'backend') {
 $Result = switch ("$($Backend.Name)/$Action") {
     'git/prepare'             { Git-Prepare }
     'git/status'              { Git-Status }
-    'git/diff'                { Git-Diff }
+    'git/diff'                { Git-Diff -Since $Since }
     'git/ticket-history'      { @{ Code = 0; Out = '(git backend has no ticket-history support)'; Err = '' } }
     'accurev/prepare'         { AccuRev-Prepare }
     'accurev/status'          { AccuRev-Status }

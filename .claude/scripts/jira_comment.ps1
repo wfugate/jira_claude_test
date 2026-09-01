@@ -22,7 +22,8 @@
 
 param(
     [Parameter(Mandatory)] [string] $Issue,
-    [string] $AppendDescription = '',
+    [switch] $SetDescription,
+    [string] $AppendDescription = '',   # legacy: the dated change-log line
     [string] $VisibilityRole    = '',
     [switch] $SelfTest,
     [switch] $DryRun
@@ -48,8 +49,85 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 if ($MyInvocation.InvocationName -eq '.') { return }
 
 # ---- append one line to the description's change log -------------------
+if ($SetDescription) {
+    <#
+      Replace the description with new text read from stdin.
+
+      THIS IS THE ONE DESTRUCTIVE OPERATION IN THE TOOL, and it replaces one
+      that could not be. The old -AppendDescription could only add, and
+      Assert-DescriptionSurvived refused to send a document that had lost any of
+      the original -- a guarantee added after review found that a depth
+      truncation bug could silently delete human-authored acceptance criteria.
+
+      An update cannot keep that guarantee, because removing text is now
+      legitimate. Three things replace it:
+
+        1. The human approves the FULL proposed text in the conversation before
+           this script is ever called. That is the real gate.
+        2. A shrink guard below refuses a drastic reduction outright.
+        3. The diff is printed on every run, so what changed is on the record
+           even when nobody reads it at the time.
+
+      KNOWN COST: the round trip through plain text flattens structure. Headings
+      and bullet lists in the existing description come back as paragraphs and
+      hard breaks. Acceptable for the short prose descriptions this is aimed at;
+      not acceptable for a heavily formatted one, and the diff will show it.
+    #>
+    $Utf8    = New-Object System.Text.UTF8Encoding($false)
+    $NewText = (New-Object IO.StreamReader([Console]::OpenStandardInput(), $Utf8)).ReadToEnd()
+    if (-not $NewText -or -not $NewText.Trim()) {
+        throw 'No description on stdin. Pipe the full replacement text in.'
+    }
+    $NewText = $NewText.Trim()
+
+    $Data    = Invoke-Jira -Method 'GET' -Path "/rest/api/3/issue/$Issue`?fields=description"
+    $OldDoc  = $Data.fields.description
+    $OldText = if ($OldDoc -is [string]) { $OldDoc }
+               elseif ($OldDoc)          { (Convert-AdfToText -Node $OldDoc).ToString().Trim() }
+               else                      { '' }
+
+    # Shrink guard. Not a no-deletion rule -- deletion is the point -- but losing
+    # half the description is far more likely to be a bug than an intention.
+    if ($OldText.Length -gt 200 -and $NewText.Length -lt ($OldText.Length * 0.5)) {
+        Write-Output "!! REFUSING: the new description is $($NewText.Length) chars against $($OldText.Length) now."
+        Write-Output '!! That is more than half the text gone. If the cut is deliberate, make it'
+        Write-Output '!! by hand in Jira - this script will not do it.'
+        exit 1
+    }
+
+    $OldLines = @($OldText -split "`r?`n")
+    $NewLines = @($NewText -split "`r?`n")
+    Write-Output "Description diff for $Issue`:"
+    $Diff = Compare-Object -ReferenceObject $OldLines -DifferenceObject $NewLines
+    if (-not @($Diff).Count) {
+        Write-Output '  (identical - nothing to do)'
+        exit 0
+    }
+    foreach ($d in @($Diff)) {
+        $mark = if ($d.SideIndicator -eq '=>') { '  + ' } else { '  - ' }
+        Write-Output "$mark$($d.InputObject)"
+    }
+    Write-Output ''
+
+    $Doc = ConvertTo-Adf -Text $NewText
+
+    if ($DryRun) {
+        Write-Output 'DRY RUN - nothing sent.'
+        exit 0
+    }
+
+    Invoke-Jira -Method 'PUT' -Path "/rest/api/3/issue/$Issue" `
+                -Body @{ fields = @{ description = $Doc } } | Out-Null
+    Write-Output "Description updated on $Issue."
+    exit 0
+}
+
 if ($AppendDescription) {
-    $Stamp = Get-Date -Format 'yyyy-MM-dd'
+    # Date AND TIME, because this stamp is the watermark as well as a human
+    # label. With date only it parses to midnight, so a second run on the same
+    # day re-read the sessions the first run had already published -- which is
+    # the ordinary case, not an edge one: people post an update and keep working.
+    $Stamp = Get-Date -Format 'yyyy-MM-dd HH:mm'
 
     # A read-modify-write, unlike posting a comment. The whole GET/append/PUT
     # cycle happens inside this script: the existing description text is never
@@ -79,8 +157,8 @@ if ($AppendDescription) {
                 -Body @{ fields = @{ description = $Updated } } | Out-Null
     Write-Output "Appended one line to $Issue description."
     Write-Output ''
-    Write-Output '   Reminder: if the comment is posted too, consume the sessions that fed it'
-    Write-Output "   with notes.ps1 -MarkPosted `"<session-ids>`" -Ticket $Issue"
+    Write-Output '   That line is the watermark. The next run reads only sessions modified'
+    Write-Output '   after today, so this reasoning will not be offered to another ticket.'
     exit 0
 }
 
@@ -123,20 +201,18 @@ if ($DryRun) {
 $Result = Invoke-Jira -Method 'POST' -Path "/rest/api/3/issue/$Issue/comment" -Body $Body
 Write-Output "Posted comment $($Result.id) to $Issue"
 
-# NOTHING LINKS A SUCCESSFUL POST TO THE MARK STEP.
+# NOTHING FURTHER IS REQUIRED AFTER A COMMENT POSTS.
 #
-# If the post succeeds and -MarkPosted never runs - a failed description append,
-# a closed terminal, a distracted human - the records stay unposted and are
-# offered to the NEXT ticket. Reasoning that is already published gets posted a
-# second time, in the wrong place.
+# There were two warnings here in turn, and both outlived their design. The
+# first told you to mark records consumed, from the record store. The second
+# told you to append a change-log line, from the dated-watermark design. Each
+# survived the thing it protected, and each then instructed a reader to do
+# something the command body forbids.
 #
-# This cannot be fixed here: this script does not know which records fed the
-# comment. So make the gap loud instead of silent, and print the command that
-# closes it.
+# The comment's own timestamp is now the watermark, so posting it IS the
+# complete operation. If a third warning is ever wanted here, check first that
+# what it protects still exists.
 Write-Output ''
-Write-Output '!! NOT YET DONE: the sessions that fed this comment are still marked unposted.'
-Write-Output '   Until they are consumed they will be offered to the next ticket, and this'
-Write-Output '   reasoning would be published twice. Run, with the ids from the draft feed:'
-Write-Output ''
-Write-Output "     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notes.ps1 -MarkPosted `"<session-ids>`" -Ticket $Issue"
+Write-Output "   This comment's timestamp is now the watermark: the next run reads only"
+Write-Output '   sessions modified after it. Nothing further is required.'
 Write-Output ''
