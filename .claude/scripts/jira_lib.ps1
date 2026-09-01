@@ -141,7 +141,7 @@ function Invoke-Jira {
     }
 
     try {
-        return Invoke-RestMethod @Args
+        return Invoke-RestMethod @Req
     } catch {
         $Code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
         $Hint = switch ($Code) {
