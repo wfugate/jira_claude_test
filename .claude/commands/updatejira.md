@@ -40,11 +40,20 @@ So decide, before step 3:
 - **This conversation did none of it** → you are only reading, and everything
   comes from steps 3–5.
 
-Two obligations whenever this conversation contributed. **Label the
-provenance** — say which reasoning came from here and which from an earlier
-session, so I can tell what was witnessed from what was reconstructed. And
-**apply the same rule**: a choice you made on your own initiative that I never
-confirmed is not a decision I made, whichever session it happened in.
+Two obligations whenever this conversation contributed.
+
+**Tell me which sessions fed the draft** — in your notes to me, not in the
+comment. I need it to spot a session that should have been found and wasn't.
+It does not go on the ticket: every source is my own words either way, so which
+chat window they were typed in is not a fact about the work, and a reader six
+months from now has no use for it. (This used to be a `From this session` line
+in the comment. It made sense when earlier sessions arrived as gate-written
+summaries and this one arrived verbatim — there was a real fidelity difference
+to flag. There is not any more.)
+
+And **apply the same rule everywhere**: a choice you made on your own initiative
+that I never confirmed is not a decision I made, whichever session it happened
+in.
 
 ## Step 1 — the ticket, and the watermark
 
@@ -200,8 +209,6 @@ Root cause: <bug fixes only, and only if I established it>
 Type: <bug fix|feature|refactor|config|dependency|test|docs>  |  Areas: <files or classes>
 
 Also in this diff: <one line, only if the diff has changes nothing accounts for>
-
-From this session: <one line, only if anything came from the current conversation>
 
 Coverage limited: <one line, only if you could not read every matching session>
 ```
