@@ -1,12 +1,29 @@
-# Installing on another machine
+# Installing
+
+Written for the **Claude Code desktop app**, which is what most people use. CLI
+differences are noted where they matter.
 
 Work top to bottom. Each step isolates one failure class, so out of order means
 debugging auth tangled up with everything else.
 
-**Install against a git repo first, not AccuRev.** A clone of `lending-multi` is
+**Install against a git repo first, not AccuRev.** A clone of this repo is
 ideal. The AccuRev backend has never been executed and this has never been
 installed on a second machine — turn both unknowns on at once and a failure has
 two possible causes.
+
+---
+
+## Where to run the commands below
+
+Two options, both fine:
+
+- **The integrated terminal** in the desktop app. It runs PowerShell.
+- **Just ask Claude in a chat** — "run `.claude/scripts/vcs.ps1 backend`". You
+  will get a permission prompt the first time; that is normal.
+
+**One trap, and it has cost real time:** a variable you set in the integrated
+terminal exists only in that terminal. It does **not** reach the subprocesses
+Claude runs. That is why step 3 sets them at user level and restarts the app.
 
 ---
 
@@ -28,17 +45,26 @@ Six files, all in version control. Nothing else.
 ```
 
 Plus three environment variables per machine. **No hook, no `settings.json`, no
-background process, no local state, no Python.** Nothing needs an admin: the
-previous design needed org permission for project hooks, and that requirement is
-gone.
+background process, no local state, no Python.** Nothing needs an admin.
 
 ---
 
 ## 1. Prerequisites
 
+### Claude Code
+
+If the desktop app opens and you can start a chat, it is installed and signed
+in. There is nothing to version-check.
+
+*CLI users:* `claude --version`.
+
+### Git
+
 ```
-claude --version
+git --version
 ```
+
+### PowerShell is not locked down
 
 ```
 $ExecutionContext.SessionState.LanguageMode
@@ -53,28 +79,20 @@ to work around.
 $PSVersionTable.PSVersion
 ```
 
-5.1 expected.
+5.1 is expected.
 
-```
-git --version
-```
+## 2. Open the repo
 
-**You no longer need to test headless `claude -p`.** The old design ran the
-model in a detached background process; this one does not run anything you are
-not watching.
+Clone it, then **open that folder as a project in the desktop app** — File →
+Open Folder, or whatever your version calls it. The six files above should be
+present.
 
-## 2. Get the files there
+This matters: `/updatejira` and the `CLAUDE.md` ask only exist inside this
+project. Open a different folder and neither appears.
 
-Clone the repo. Confirm the six files above are present.
+*CLI users:* `cd` into the repo and start `claude` from there.
 
-If `.claude/settings.json` came along, it still registers the old `SessionEnd`
-hook. Harmless — it writes records nothing reads — but delete it once you are
-confident, or it burns a model call at every session end.
-
-## 3. Set the three variables, permanently
-
-A terminal-scoped variable dies with the window, and in the desktop app it never
-reaches the tool's subprocesses at all.
+## 3. Set the three variables, then restart the app
 
 ```
 [Environment]::SetEnvironmentVariable('JIRA_URL', 'https://datamaxx.atlassian.net', 'User')
@@ -87,11 +105,12 @@ reaches the tool's subprocesses at all.
 Full email address, not a username — the commonest cause of a 401.
 
 **Token:** set `JIRA_TOKEN` through the GUI so it stays out of shell history —
-`sysdm.cpl` → Advanced → Environment Variables → User variables → New.
+press Win, type "environment variables", → Environment Variables → User
+variables → New.
 
-**Then restart Claude Code entirely.** It reads the environment at launch, so a
-variable set afterwards does not reach it. This cost a full debugging cycle
-during development.
+**Then quit the desktop app completely and reopen it.** Not just the chat — the
+app. It reads the environment at launch, so anything set afterwards is invisible
+to it. Skipping this looks exactly like an expired token.
 
 ## 4. Verify, in this order
 
@@ -105,14 +124,14 @@ Expect `TICKET:` / `SUMMARY:` / `LAST_UPDATE:` / `DESCRIPTION:`.
 
 **A 404 here usually means the token, not the key.** Jira returns 404 rather
 than 401 on issue reads so it does not reveal whether an issue exists to a
-caller it has not authenticated. An expired token looks exactly like a typo.
-To tell them apart, a call that only needs auth:
+caller it has not authenticated. An expired token looks exactly like a typo. To
+tell them apart, a call that only needs auth:
 
 ```
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". .\.claude\scripts\jira_lib.ps1; (Invoke-Jira -Method GET -Path '/rest/api/3/myself').displayName"
 ```
 
-401 there means the token. A name means the key.
+401 there means the token or the app restart. Your name means the key.
 
 ### 4b. Backend
 
@@ -122,21 +141,24 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude\scripts\vcs.ps1 
 
 Expect `backend: git   (found .git)`.
 
-### 4c. The transcript lookup
+### 4c. The transcript lookup — the real portability test
 
 ```
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude\scripts\sessions.ps1 -List
 ```
 
-Should list recent sessions for this repo with labels. **This is the
-second-machine risk.** If it finds nothing, the project-directory derivation did
-not work on this machine — check that `~/.claude/projects/` exists and contains a
-directory matching the repo path with separators replaced by hyphens.
+Should list recent sessions for this repo. **This is the step most likely to
+break on a new machine.** If it finds nothing, the project-directory derivation
+did not work here — check that `~/.claude/projects/` exists and contains a
+directory matching this repo's path with separators replaced by hyphens.
+
+Note you need at least one prior session in this project for anything to show,
+so have a short chat here first if you have only just cloned.
 
 ### 4d. The ask
 
-Start a session, say something that looks like ticket work — *"the late fee is
-wrong for accounts overdue past 40 days, fix it"* — and confirm Claude asks which
+Start a chat and say something that looks like ticket work — *"the late fee is
+wrong for accounts overdue past 40 days, fix it"*. Claude should ask which
 ticket. Answer with a real key.
 
 Then confirm the key landed:
@@ -145,34 +167,32 @@ Then confirm the key landed:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude\scripts\sessions.ps1 -Key <your-key>
 ```
 
-That session should be listed. If not, the ask did not fire or the key was never
-stated — and the whole tool depends on this step.
+That session should be listed. If not, either the ask did not fire or the key
+was never stated — and the whole tool depends on this step.
 
 ### 4e. The draft
 
-**In the same chat that did the work** — that is the normal way to use it, and
-the current conversation is a first-class reasoning source. A fresh chat works
-too, but it exercises less.
+**In the same chat that did the work.** That is the normal way to use it, and
+the current conversation is a first-class source. A separate chat works too but
+exercises less.
 
 ```
 /updatejira <your-key>
 ```
 
+A **permission prompt before each Jira write is the approval gate working**, not
+an error.
+
 The diff step has three sources and says which one it used: bounded by the
 watermark (preferred, spans committed and uncommitted work), `git diff HEAD`
 when the ticket has never been written up, or branch-against-base. If it prints
-nothing at all with work clearly present, that is a bug worth reporting — it is
-the failure mode the three sources exist to prevent.
-
-**A permission prompt before each Jira write is the approval gate working**, not
-an error. `jira_comment.ps1` is deliberately absent from `allowed-tools`.
+nothing at all with work clearly present, that is a bug worth reporting.
 
 ### 4f. The loop
 
 Post, then run `/updatejira <your-key>` again with no new work. It should find
-nothing to add — the watermark excluding what was just published. Then do a
-small piece of new work with the key stated, and run again: it should find
-exactly that one session.
+nothing to add. Then do a small piece of new work with the key stated and run
+again: it should find exactly that one session.
 
 ---
 
@@ -213,5 +233,5 @@ Two gaps no verification removes: new-file **contents** are absent from an
 AccuRev diff (they show in status as `(external)` and nowhere else), and the
 timestamp optimisation may hide new files with no documented override.
 
-Note that **capture is unaffected by the VCS** — transcripts have nothing to do
-with version control. Only the diff step touches it.
+Note that **finding sessions is unaffected by the VCS** — transcripts have
+nothing to do with version control. Only the diff step touches it.

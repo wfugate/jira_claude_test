@@ -22,6 +22,11 @@ asks which ticket. That key, stated in your own words, is what lets
 you actually said, and draft a ticket comment from it. Nothing posts without
 your approval.
 
+## Setup, in one line
+
+Open this folder as a project in the Claude Code desktop app, set three
+environment variables, restart the app. `INSTALL.md` has the detail.
+
 ## Status
 
 Works end to end on **git**. Capture, attribution, drafting, posting, the

@@ -6,6 +6,9 @@ not have come from the code.
 Library book lending is the domain because nobody needs it explained. Don't talk
 about the repo or the scripts — if someone asks how it works, answer afterwards.
 
+Run everything in the **Claude Code desktop app**, with this repo open as the
+project. "New chat" below means a new conversation in the app.
+
 ---
 
 ## Setup, before anyone is watching
@@ -18,7 +21,8 @@ like, and it matters later.
 > **Description:** Members say they try to renew a book and it just fails, with
 > no explanation. Desk staff can't tell them why either.
 
-**2. Start clean:** `git checkout . && git status` — nothing uncommitted.
+**2. Start clean.** In the integrated terminal, or ask Claude to run it:
+`git checkout . && git status` — nothing uncommitted.
 
 **3. Run Chat 1 below.** Leave the work uncommitted.
 
@@ -45,7 +49,9 @@ New chat. Paste:
 **Claude will ask which ticket this is for.** Answer with your key. Nobody ran a
 command; it asked.
 
-Then close the chat. **Don't run anything else here.**
+Then leave this chat — switch away or close it, either is fine. **Don't run
+anything else here.** Nothing needs to be saved or ended; the conversation is
+already on disk.
 
 ---
 
