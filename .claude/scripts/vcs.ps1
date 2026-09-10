@@ -6,6 +6,10 @@
 # nothing else -- which matters, because git is what we developed against and
 # AccuRev is the real target.
 #
+# The accurev commands were verified against a real workspace on 2026-09-10.
+# The git half stays: it is the only end-to-end verified path, the demo runs on
+# it, and it is the regression test for the shared capture layer below.
+#
 # Usage:
 #   vcs.ps1 prepare          make new files visible to the diff (may be a no-op)
 #   vcs.ps1 status           what has changed in the working copy
@@ -39,11 +43,26 @@ function Invoke-Vcs {
     <#
       Run a VCS command in the repo root and return rc / stdout / stderr.
 
-      Uses file redirection rather than the PowerShell pipeline for the same
-      reason worker.ps1 does: PowerShell re-encodes native program output using
-      the console's OEM codepage, which corrupts any non-ASCII character in a
-      diff. Redirecting to a file means the bytes are never touched, and we
-      decode them as UTF-8 ourselves.
+      Output is captured by having CMD redirect it to files, and we decode those
+      bytes as UTF-8 ourselves. Two separate reasons, and the second was found
+      the hard way:
+
+      1. PowerShell re-encodes native program output through the console's OEM
+         codepage, which corrupts any non-ASCII character in a diff. Writing to
+         a file means the bytes are never touched.
+
+      2. IT MUST BE CMD DOING THE REDIRECTION, NOT Start-Process.
+         `accurev diff` shells out to its own bundled diff.exe to produce the
+         body. Under Start-Process -RedirectStandardOutput that child fails with
+         "Error running diff: 0 9013", accurev still exits 0, and the diff comes
+         back as a header and nothing else. Verified against a real workspace:
+
+           Start-Process + redirect   rc=0   body LOST
+           cmd.exe /c "... > file"    rc=1   body complete
+
+         So the mechanism added to prevent silent corruption was itself causing
+         silent total loss -- the exact outcome the comment above promised could
+         not happen. Hence CMD.
     #>
     param([Parameter(Mandatory)] [string] $Exe,
           [string[]] $Arguments = @())
@@ -52,19 +71,29 @@ function Invoke-Vcs {
     $Base    = Join-Path $env:TEMP "updatejira-vcs-$PID-$(Get-Random)"
     $OutFile = "$Base.out"; $ErrFile = "$Base.err"
 
+    # Quote any argument containing whitespace. CMD sees one command line, so an
+    # unquoted path with a space would split into two arguments.
+    $Quoted = @($Arguments | ForEach-Object {
+        if ($_ -match '\s' -and $_ -notmatch '^".*"$') { '"' + $_ + '"' } else { $_ }
+    })
+
+    $Prev = Get-Location
     try {
-        $p = Start-Process -FilePath $Exe -ArgumentList $Arguments `
-                 -WorkingDirectory $RepoRoot `
-                 -RedirectStandardOutput $OutFile `
-                 -RedirectStandardError  $ErrFile `
-                 -WindowStyle Hidden -PassThru -Wait
+        Set-Location -LiteralPath $RepoRoot
+        $Line = '"' + $Exe + '" ' + ($Quoted -join ' ') +
+                ' > "' + $OutFile + '" 2> "' + $ErrFile + '"'
+        # cmd /c needs the whole line wrapped when it begins with a quote.
+        & $env:ComSpec /c ('"' + $Line + '"') | Out-Null
+        $Code = $LASTEXITCODE
+
         $Out = if (Test-Path $OutFile) { [IO.File]::ReadAllText($OutFile, $Utf8) } else { '' }
         $Err = if (Test-Path $ErrFile) { [IO.File]::ReadAllText($ErrFile, $Utf8) } else { '' }
-        return @{ Code = $p.ExitCode; Out = $Out; Err = $Err }
+        return @{ Code = $Code; Out = $Out; Err = $Err }
     } catch {
         # Exe not found, or could not start. 127 mirrors the shell convention.
         return @{ Code = 127; Out = ''; Err = "could not run '$Exe': $($_.Exception.Message)" }
     } finally {
+        Set-Location -LiteralPath $Prev
         foreach ($f in @($OutFile, $ErrFile)) {
             if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
         }
@@ -150,52 +179,54 @@ function Git-Diff {
 
 
 # ---------------------------------------------------------------------------
-# AccuRev -- written from the official CLI User's Guide, NEVER RUN.
+# AccuRev -- VERIFIED against a real workspace on 2026-09-10.
 #
-# Nothing below has executed against a real workspace. The flags are documented
-# rather than guessed (an earlier version used `diff -a -b`, where -b is not an
-# AccuRev flag at all -- extra flags pass through to the underlying comparison
-# program, where -b means ignore-whitespace, so it would have silently ignored
-# whitespace changes). But documented is not verified.
+# Every command below has been executed. All four flag choices turned out to be
+# correct; what was broken was the capture layer in Invoke-Vcs, not the flags.
+# See that function for the detail. Three things were learned that documentation
+# alone did not give:
+#
+#   * `accurev diff` EXITS 1 when differences exist. Non-zero is not failure.
+#   * `-- -u` passes -u to the bundled diff program, giving a real unified diff.
+#     Without it the format is ed/normal (1c1,2 / < / --- / >).
+#   * `stat -fx` returns XML with an explicit status attribute. The plain-text
+#     column spacing is NOT fixed-width, so parsing it is unsafe.
+#
+# CORRECTION: an earlier comment here claimed `-b` "is not an AccuRev flag at
+# all". It is -- `accurev help diff` documents it as "compare the file in the
+# workspace tree with the version in the workspace's backing stream". The old
+# `diff -a -b` was still wrong, but because it compared against the backing
+# stream rather than the last kept version. Passthrough to the diff program is
+# `--`, not a bare unrecognised flag.
 # ---------------------------------------------------------------------------
 
 function AccuRev-Prepare {
-    # AccuRev has no equivalent of git's intent-to-add.
+    # AccuRev has no equivalent of git's intent-to-add: a file in the workspace
+    # but not in the depot is (external) and appears in no diff.
     #
-    # A file in the workspace but not in the depot has status (external) and is
-    # in NO diff until `accurev add` is run. So on AccuRev the draft step sees
-    # new files listed by status but cannot see their contents, and must
-    # describe them from filenames plus the captured reasoning.
-    #
-    # This is a real capability difference between the two backends, not
-    # something verification will remove.
+    # This is no longer a capability gap. AccuRev-Diff now finds (external)
+    # entries via `stat -fx` and reads their contents off disk, so new-file
+    # contents do reach the draft. Nothing to do here.
     return @{ Code = 0; Err = ''
-              Out  = '(no prepare step for accurev - new files appear in status as (external) but their contents are NOT in the diff)' }
+              Out  = '(no prepare step needed on accurev - new file contents are read from disk by the diff step)' }
 }
 
 function AccuRev-Status {
     <#
       Everything outstanding in the workspace, in one call.
 
-      --outgoing is documented as showing all files with any of the statuses
-      (member), (modified), (missing) or (external) -- modified files, new files
-      not yet added, AND files deleted from the workspace. That is the whole
-      picture. An earlier version used `stat -m` plus `stat -x`, which missed
-      (missing) entirely: a file you deleted would have been invisible.
+      VERIFIED: --outgoing covers (modified), (external) AND (missing) -- the
+      last confirmed by moving a file aside and back, which produced a (missing)
+      line and then (backed) again.
 
-      -O overrides a timestamp optimisation. Without it, stat skips files whose
-      timestamps have not changed since the last update or modified-search, and
-      can silently omit a genuinely modified file. We pass it deliberately: slow
-      and complete beats fast and wrong, because a missing file means a ticket
-      comment that describes less work than was actually done.
+      VERIFIED: -O is accepted alongside --outgoing. `accurev help stat`
+      documents it as "Override the optimized search for modified files", and
+      both appear in the same USAGE line. It produced output identical to
+      running without it, so its protective value is documented rather than
+      demonstrated -- but it costs nothing and the failure it guards against
+      (a modified file silently skipped) is one we cannot afford.
 
-      -O IS valid alongside --outgoing: both are documented options of `stat`,
-      and the syntax permits combining them. The retry-without-O fallback below
-      stays anyway - it costs nothing and covers a version that disagrees.
-
-      ALSO UNVERIFIED: the docs say the timestamp optimisation applies to the
-      external-file search too, with no documented way to disable it there. A
-      brand-new file whose timestamp looks stale could be missed.
+      The retry-without-O fallback stays: it covers a version that disagrees.
     #>
     $r = Invoke-Vcs -Exe 'accurev' -Arguments @('stat', '--outgoing', '-O')
     if ($r.Code -ne 0) {
@@ -208,51 +239,151 @@ function AccuRev-Status {
     return $r
 }
 
+function Get-AccuRevExternals {
+    <#
+      Paths of (external) files -- in the workspace, unknown to the depot.
+
+      Read from `stat -fx` XML, not the plain-text listing. The text columns are
+      not fixed-width (four spaces before (external) on one line, two on
+      another), so a text parse would be guesswork. The XML gives
+      status="(external)" as an attribute.
+
+      Returns workspace-relative paths as AccuRev reports them (".\some\path").
+    #>
+    $r = Invoke-Vcs -Exe 'accurev' -Arguments @('stat', '--outgoing', '-fx')
+    if ($r.Code -ne 0 -or -not $r.Out.Trim()) { return @() }
+
+    try { $doc = [xml]$r.Out } catch { return @() }
+
+    return @($doc.SelectNodes('//element') | Where-Object {
+        $_.status -and $_.status.Contains('(external)') -and $_.dir -ne 'yes'
+    } | ForEach-Object { $_.location })
+}
+
 function AccuRev-Diff {
     <#
-      All elements, workspace against the version last kept.
+      All elements that differ, workspace against the version last kept, PLUS
+      the contents of new files.
 
-      `accurev diff` with no version spec compares the workspace file against
-      the active version in the workspace stream -- what you last kept. That is
-      the equivalent of `git diff HEAD`. -a means "all elements in the workspace,
-      output only those that differ" - confirmed against the docs, and it does
-      include changes made locally but not yet kept.
+      VERIFIED: `diff -a` does show changes made but not yet kept. That was the
+      main open question and the answer is yes.
 
-      Note -a is not a modified-only filter; it is all-elements-that-differ. That
-      is what we want here. (`-m` would be the explicit modified-only form.)
+      `-- -u` passes -u through to the bundled diff program for a unified diff.
+      Everything downstream already expects that shape.
+
+      EXIT CODE 1 MEANS DIFFERENCES FOUND, not failure. Treated as success here,
+      because the caller exits non-zero and prints `!!` on a real failure -- so
+      leaving this uncorrected would have made every run with changes look like
+      a broken diff.
+
+      New files are appended as synthetic added-file blocks. `accurev diff`
+      cannot show them: an (external) file has no depot version to compare
+      against. But the file is on disk, so we read it. New files are exactly
+      where new features live, and describing them from a filename alone is how
+      a draft starts guessing.
     #>
-    return Invoke-Vcs -Exe 'accurev' -Arguments @('diff', '-a')
+    $r = Invoke-Vcs -Exe 'accurev' -Arguments @('diff', '-a', '--', '-u')
+
+    # rc=1 is "differences exist". Anything else non-zero is a genuine failure.
+    if ($r.Code -eq 1) { $r.Code = 0 }
+    if ($r.Code -ne 0) { return $r }
+
+    $MaxNewFileLines = 200
+    $Blocks = @()
+    foreach ($Path in Get-AccuRevExternals) {
+        $Full = Join-Path $RepoRoot ($Path -replace '^\.[\\/]', '')
+        if (-not (Test-Path -LiteralPath $Full -PathType Leaf)) { continue }
+
+        try {
+            $Bytes = [IO.File]::ReadAllBytes($Full)
+        } catch {
+            $Blocks += "--- /dev/null`n+++ $Path`n(new file - could not be read: $($_.Exception.Message))"
+            continue
+        }
+
+        # Skip binaries: a NUL byte in the first chunk is the cheap test.
+        $Probe = $Bytes[0..([Math]::Min(1023, [Math]::Max(0, $Bytes.Length - 1)))]
+        if ($Bytes.Length -gt 0 -and ($Probe -contains 0)) {
+            $Blocks += "--- /dev/null`n+++ $Path`n(new binary file, $($Bytes.Length) bytes - contents not shown)"
+            continue
+        }
+
+        $Lines = @([IO.File]::ReadAllLines($Full))
+        $Shown = @($Lines | Select-Object -First $MaxNewFileLines)
+        $Body  = ($Shown | ForEach-Object { '+' + $_ }) -join "`n"
+        $Note  = ''
+        if ($Lines.Count -gt $MaxNewFileLines) {
+            $Note = "`n(truncated: showing $MaxNewFileLines of $($Lines.Count) lines)"
+        }
+        $Blocks += "--- /dev/null`n+++ $Path`n@@ new file, $($Lines.Count) line(s) @@`n$Body$Note"
+    }
+
+    if ($Blocks.Count) {
+        $r.Out = $r.Out.TrimEnd() + "`n`n" +
+                 "=== NEW FILES ($($Blocks.Count)) - (external), so absent from accurev diff; read from disk ===`n`n" +
+                 ($Blocks -join "`n`n")
+    }
+    return $r
 }
 
 function AccuRev-TicketHistory {
     <#
-      All transactions whose comment mentions the ticket.
+      Transactions whose comment mentions the ticket.
 
-      Matthew's observation: with the ticket number in the transaction comment,
-      AccuRev already aggregates every change for a ticket -- which is the half
-      of the problem this tool does NOT need to solve.
+      VERIFIED working. But `-c` is a CASE-INSENSITIVE SUBSTRING match, and that
+      matters more than it sounds: `-c "QRM-124"` returned QRM-1240's
+      transactions alongside the real QRM-124 ones. Left unfiltered, this
+      attributes someone else's work to your ticket -- a confident, plausible
+      wrong answer on a permanent record, which is the exact failure this whole
+      tool exists to avoid.
 
-      `hist` has a comment filter for exactly this: -a searches all elements in
-      the depot, -c returns only transactions whose comments contain the string
-      (case-insensitive). So no local filtering is needed - an earlier version
-      dumped recent transactions and grepped them, which was a guess.
+      So the results are filtered here for the key as a WHOLE TOKEN: the key
+      must not be followed by a digit or hyphen. A script is the right place for
+      that rule, because it has to hold on every run.
+
+      Also note `-c` searches all history with no time bound -- the QRM-124
+      match reached back to 2015. Bounding it needs `-t`, whose flags are not
+      verified, so for now the output is passed through with a warning.
 
       CAVEAT: this is depot-wide ELEMENT history filtered by comment, not a
-      guaranteed list of every transaction in the database. Good enough for "what
-      changed under this ticket"; do not present it as exhaustive.
-
-      Still never executed against a real workspace.
+      guaranteed list of every transaction. Do not present it as exhaustive.
     #>
     param([string] $Key = '')
 
     if (-not $Key) {
         return @{ Code = 0; Err = ''; Out = '(no ticket key given)' }
     }
-    return Invoke-Vcs -Exe 'accurev' -Arguments @('hist', '-a', '-c', $Key)
+
+    $r = Invoke-Vcs -Exe 'accurev' -Arguments @('hist', '-a', '-c', $Key)
+    if ($r.Code -ne 0 -or -not $r.Out.Trim()) { return $r }
+
+    # Transactions are separated by lines starting "transaction ".
+    $Raw    = $r.Out -replace "`r`n", "`n"
+    $Chunks = @($Raw -split '(?m)(?=^transaction\s)') | Where-Object { $_.Trim() }
+
+    # Whole-token match: the key not followed by a digit or hyphen, so QRM-124
+    # does not match QRM-1240.
+    $Rx   = [regex]::new('(?i)' + [regex]::Escape($Key) + '(?![0-9\-])')
+    $Keep = @($Chunks | Where-Object { $Rx.IsMatch($_) })
+    $Drop = @($Chunks).Count - $Keep.Count
+
+    if (-not $Keep.Count) {
+        $Extra = ''
+        if ($Drop -gt 0) {
+            $Extra = " - $Drop substring match(es) were discarded, e.g. a longer key beginning with it"
+        }
+        $r.Out = "(no transaction comment contains $Key as a whole key$Extra)"
+        return $r
+    }
+
+    $r.Out = ($Keep -join "`n").TrimEnd()
+    if ($Drop -gt 0) {
+        $r.Out += "`n`n(dropped $Drop transaction(s) that matched $Key only as a substring of a longer key)"
+    }
+    $r.Out += "`n(note: hist -c is unbounded in time - old transactions may appear)"
+    return $r
 }
 
-
-# ---------------------------------------------------------------------------
 
 function Get-EnvSetting {
     # Process environment first, then the PERSISTED user and machine values.
@@ -311,7 +442,9 @@ $Backend = Get-Backend
 if ($Action -eq 'backend') {
     Write-Output "backend: $($Backend.Name)   ($($Backend.Reason))"
     if ($Backend.Name -eq 'accurev') {
-        Write-Output 'WARNING: no accurev command in this file has ever been run against a real workspace. Treat its output as unverified.'
+        Write-Output 'note: status, diff and ticket-history are VERIFIED against a real workspace (2026-09-10).'
+        Write-Output 'note: hist -c matches substrings, so results are filtered here to whole keys. It is also unbounded in time.'
+        Write-Output 'note: NOT yet verified is a full /updatejira run from an accurev workspace.'
     }
     exit 0
 }
@@ -330,15 +463,30 @@ $Result = switch ("$($Backend.Name)/$Action") {
 
 if ($Result.Out -and $Result.Out.Trim()) { Write-Output $Result.Out.TrimEnd() }
 
+# STDERR IS REPORTED WHENEVER THERE IS ANY, EVEN ON SUCCESS.
+#
+# This used to be printed only when the exit code was non-zero, and that hid a
+# total data loss. `accurev diff` shelled out to its bundled diff.exe, that
+# child failed with "Error running diff: 0 9013" on stderr, and accurev itself
+# still exited 0. So: exit code fine, stderr discarded because the code was
+# fine, and stdout non-empty (a header with no body) so the "nothing changed"
+# branch did not fire either. The diff came back empty and the script reported
+# success -- invisible in every direction.
+#
+# A tool that writes to stderr and exits 0 is telling you something. Print it.
+if ($Result.Err -and $Result.Err.Trim()) {
+    $e = $Result.Err.Trim()
+    $Marker = if ($Result.Code -ne 0) { '!!' } else { '!! (exit 0, but stderr was not empty)' }
+    Write-Output ''
+    Write-Output "$Marker $($Backend.Name) $Action"
+    Write-Output "!! $($e.Substring(0, [Math]::Min(600, $e.Length)))"
+}
+
 if ($Result.Code -ne 0) {
     # LOUD, never silent. A diff that failed must never look like "no changes" --
     # that would produce a ticket comment describing work it could not see.
     Write-Output ''
     Write-Output "!! $($Backend.Name) $Action failed (rc=$($Result.Code))"
-    if ($Result.Err -and $Result.Err.Trim()) {
-        $e = $Result.Err.Trim()
-        Write-Output "!! $($e.Substring(0, [Math]::Min(600, $e.Length)))"
-    }
     exit $Result.Code
 }
 elseif (-not ($Result.Out -and $Result.Out.Trim())) {
