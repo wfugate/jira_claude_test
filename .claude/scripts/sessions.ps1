@@ -8,7 +8,9 @@
 #       Sessions whose conversation mentions that ticket key, newest last.
 #
 #   sessions.ps1 -Extract "abc12345,def67890"
-#       The user's turns from those sessions, as data for the draft step.
+#       The conversation from those sessions, as data for the draft step. Each
+#       turn is tagged [DEVELOPER said] or [CLAUDE proposed...] -- the two carry
+#       different weight and the draft must not conflate them.
 #
 #   sessions.ps1 -List [-Limit 20]
 #       Every recent session in this repo, labelled, for when no key was stated.
@@ -34,7 +36,10 @@ $ErrorActionPreference = 'Stop'
 # using the console codepage unless told otherwise.
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 
-$MaxTurnChars   = 4000    # one turn; long pastes are not reasoning
+$MaxTurnChars      = 4000   # one developer turn; long pastes are not reasoning
+$MaxAssistantChars = 2000   # tighter: assistant turns are ~44% of transcript
+                            # volume and much of it narrates what the diff
+                            # already shows
 $MaxSessions    = 8       # past this, say so rather than silently truncating
 $ScriptDir      = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot       = Split-Path -Parent (Split-Path -Parent $ScriptDir)
@@ -147,20 +152,50 @@ function Test-IsSourceFile {
 }
 
 
-function Get-UserTurns {
+function Get-SessionTurns {
     <#
-      The USER's turns, plus the source files touched.
+      The conversation's turns, tagged by who said what, plus source files
+      touched.
 
-      Ported unchanged in substance from worker.ps1, where every filter below
-      was added in response to a real defect. Only user turns: measured at ~13%
-      of transcript volume while holding most of the reasoning. Assistant turns
-      are ~44% and narrate what was done, which the diff already shows -- and
-      including them would invent rationales the developer never endorsed.
+      WHY ASSISTANT TURNS ARE INCLUDED. They used to be dropped outright, on the
+      grounds that using them would invent rationales the developer never
+      endorsed. That is right for one case and wrong for another:
+
+        * Claude did something unprompted and nobody discussed it -> flagging it
+          as unexplained is honest, and still happens.
+        * Claude explained a change and the developer said "do that" -> the
+          reasoning exists and was accepted. Dropping it made the draft assert
+          "nothing accounts for this" about a change that had been explained in
+          full. That is a false negative on a permanent record, and worse than a
+          gap, because it manufactures a mystery and asks the reader to chase it.
+
+      So the fix is attribution, not exclusion. Every turn carries a Role, and
+      the draft step is required to render an assistant turn as something
+      proposed and not contradicted -- never as the developer's stated reason.
+
+      THE GUARD. A previous /updatejira draft is stored as an ordinary assistant
+      text block. isMeta and Test-IsCommandExpansion protect only the user slot,
+      so turning assistant capture on without an equivalent guard would make
+      every draft ingest the last one -- the recycling bug returning through an
+      unwatched door.
+
+      The guard is POSITIONAL, which is stronger than matching the draft's
+      wording: everything before the command expansion is work, everything after
+      it is drafting. Once a /updatejira expansion is seen, later assistant
+      turns are dropped. A content check on the draft's own format follows as a
+      backstop.
+
+      KNOWN COST of the positional rule: in a session that ran the command and
+      then did more work, that later work's assistant turns are lost. It fails
+      toward saying too little rather than toward inventing, which is the right
+      direction, and the developer's own turns are unaffected.
     #>
-    param([Parameter(Mandatory)] [string] $Path)
+    param([Parameter(Mandatory)] [string] $Path,
+          [switch] $DeveloperOnly)
 
     $Turns = New-Object System.Collections.ArrayList
     $Files = @{}
+    $SeenCommand = $false
 
     foreach ($Line in [IO.File]::ReadLines($Path)) {
         if (-not $Line.Trim()) { continue }
@@ -174,22 +209,21 @@ function Get-UserTurns {
             }
         }
 
-        if ($o.type -ne 'user') { continue }
-        if ($o.isSidechain)     { continue }   # a subagent's turns, not the human's
+        if ($o.isSidechain) { continue }   # a subagent's turns, not this conversation
 
-        # THE STRUCTURAL DISCRIMINATOR. The harness writes its own content into
-        # the user slot -- expanded slash commands, caveat wrappers -- and marks
-        # those records isMeta. That is the real difference between "the human
-        # typed this" and "the harness put this here", and it is the same kind
-        # of flag as isSidechain above.
-        #
-        # Measured on this repo's transcripts: 9 user records carry isMeta, and
-        # all 9 are harness content (two versions of the expanded /updatejira
-        # body, and <local-command-caveat> wrappers). No human turn carries it.
-        if ($o.isMeta)          { continue }
-        if ($o.turnCompanion)   { continue }
+        $Role = switch ([string]$o.type) {
+            'user'      { 'developer' }
+            'assistant' { 'claude' }
+            default     { '' }
+        }
+        if (-not $Role) { continue }
+        if ($Role -eq 'claude' -and $DeveloperOnly) { continue }
 
-        # Either a bare string or a list of typed blocks. Both shapes are real.
+        # The harness writes its own content into the user slot and flags it.
+        if ($Role -eq 'developer' -and ($o.isMeta -or $o.turnCompanion)) { continue }
+
+        # message.content is a bare string or a list of typed blocks. Only text
+        # blocks are wanted -- tool_use and tool_result carry no reasoning.
         $c = $o.message.content
         if ($c -is [string]) {
             $Text = $c
@@ -198,24 +232,56 @@ function Get-UserTurns {
                      ForEach-Object { $_.text }) -join ' '
         } else { continue }
 
-        if (-not $Text -or -not $Text.Trim())        { continue }
-        if ($Text.StartsWith('<system-reminder>'))   { continue }
-        if (Test-IsCommandExpansion $Text)           { continue }
+        if (-not $Text -or -not $Text.Trim()) { continue }
 
-        # Harness noise, not anything a human typed. The stdout/stderr wrappers
-        # were found by running this against real transcripts: a draft session's
-        # first "turn" was a permission-check error, which would have been read
-        # as the developer's own words.
-        if ($Text -like '*<local-command-caveat>*')  { continue }
-        if ($Text -like '*<local-command-stderr>*')  { continue }
-        if ($Text -like '*<local-command-stdout>*')  { continue }
+        if ($Role -eq 'developer') {
+            if ($Text.StartsWith('<system-reminder>'))   { continue }
+            if ($Text -like '*<local-command-caveat>*')  { continue }
+            if ($Text -like '*<local-command-stderr>*')  { continue }
+            if ($Text -like '*<local-command-stdout>*')  { continue }
 
+            if (Test-IsCommandExpansion $Text) {
+                # Everything after this point in the session is drafting, not
+                # work. Drop the expansion itself and gate later claude turns.
+                $SeenCommand = $true
+                continue
+            }
+        }
+        else {
+            if ($SeenCommand)                { continue }   # positional guard
+            if (Test-IsDraftOutput $Text)     { continue }   # backstop
+        }
+
+        $Cap = if ($Role -eq 'developer') { $MaxTurnChars } else { $MaxAssistantChars }
         $t = $Text.Trim()
-        if ($t.Length -gt $MaxTurnChars) { $t = $t.Substring(0, $MaxTurnChars) + ' [...truncated]' }
-        [void]$Turns.Add($t)
+        if ($t.Length -gt $Cap) { $t = $t.Substring(0, $Cap) + ' [...truncated]' }
+
+        [void]$Turns.Add([pscustomobject]@{ Role = $Role; Text = $t })
     }
 
     return @{ Turns = @($Turns); Files = @($Files.Keys | Sort-Object) }
+}
+
+
+function Test-IsDraftOutput {
+    <#
+      Does this assistant text look like a previous /updatejira draft?
+
+      A BACKSTOP ONLY. The positional guard in Get-SessionTurns is the real
+      protection; this covers a draft that somehow appears before the command
+      expansion in the transcript, or one pasted in by hand.
+
+      Requires three of the format's labels together, so ordinary prose that
+      happens to say "Why:" is not caught.
+    #>
+    param([string] $Text)
+
+    $Hits = 0
+    foreach ($Label in @('Why:', 'Type:', 'Areas:', 'Root cause:',
+                         'Also in this diff:', 'Coverage limited:')) {
+        if ($Text -like "*$Label*") { $Hits++ }
+    }
+    return ($Hits -ge 3)
 }
 
 
@@ -243,9 +309,9 @@ function Test-KeyStatedByHuman {
         return $false
     }
 
-    $r = Get-UserTurns -Path $Path
+    $r = Get-SessionTurns -Path $Path -DeveloperOnly
     foreach ($t in @($r.Turns)) {
-        if ($t -like "*$Key*") { return $true }
+        if ($t.Text -like "*$Key*") { return $true }
     }
     return $false
 }
@@ -258,8 +324,8 @@ function Get-Label {
     # with the same prompt.
     param([Parameter(Mandatory)] $File)
 
-    $r     = Get-UserTurns -Path $File.FullName
-    $First = if (@($r.Turns).Count) { ($r.Turns[0] -replace '\s+', ' ') } else { '(no user turns)' }
+    $r     = Get-SessionTurns -Path $File.FullName -DeveloperOnly
+    $First = if (@($r.Turns).Count) { ($r.Turns[0].Text -replace '\s+', ' ') } else { '(no developer turns)' }
     if ($First.Length -gt 100) { $First = $First.Substring(0, 100) + '...' }
 
     return @{
@@ -302,14 +368,27 @@ if ($Extract) {
             continue
         }
 
-        $r = Get-UserTurns -Path $F[0].FullName
+        $r = Get-SessionTurns -Path $F[0].FullName
         $Hit++
 
+        $Dev = @($r.Turns | Where-Object { $_.Role -eq 'developer' }).Count
+        $Cla = @($r.Turns | Where-Object { $_.Role -eq 'claude' }).Count
+
         Write-Output ''
-        Write-Output "===== SESSION $($F[0].BaseName.Substring(0,8))  ended $($F[0].LastWriteTime.ToString('yyyy-MM-dd HH:mm'))  $(@($r.Turns).Count) turns ====="
+        Write-Output "===== SESSION $($F[0].BaseName.Substring(0,8))  ended $($F[0].LastWriteTime.ToString('yyyy-MM-dd HH:mm'))  $Dev developer turn(s), $Cla claude turn(s) ====="
         if (@($r.Files).Count) { Write-Output "files touched: $(@($r.Files) -join ', ')" }
+
+        # Each turn is tagged, because the two carry different weight. A
+        # DEVELOPER turn is a stated reason. A CLAUDE turn is a proposal the
+        # developer did not contradict -- usable, but it must be described that
+        # way and never presented as what the developer said.
+        $Tagged = @($r.Turns | ForEach-Object {
+            if ($_.Role -eq 'developer') { "[DEVELOPER said]`n$($_.Text)" }
+            else { "[CLAUDE proposed, not contradicted by the developer]`n$($_.Text)" }
+        })
+
         Write-Output '<turns>'
-        Write-Output (@($r.Turns) -join "`n---`n")
+        Write-Output ($Tagged -join "`n---`n")
         Write-Output '</turns>'
     }
 
