@@ -46,6 +46,19 @@ ACCUREV-TEST.md and work through it."*
 
 ## Claude: your instructions start here
 
+### What is already set up — do not redo any of this
+
+- The workspace exists, made by hand in the GUI, backed by
+  `X_Test_William_Dev`. **Do not create or modify any workspace or stream.**
+- It is **populated**: the Alchemi tree and a `Test_DELETEME` folder. So there
+  is tracked content to work with and step 2 needs no setup.
+- A deny rule on `Bash(accurev promote:*)` is in place and **verified** — a
+  promote attempt is refused, not merely discouraged. Do not test it again.
+- The session is out of auto mode, so writes prompt rather than being judged.
+
+You may still see permission prompts on read commands. That is expected; the
+convenience allowlist has not been added.
+
 ### What you are doing and why
 
 There is a Claude Code slash command, `/updatejira`, that drafts Jira ticket
@@ -107,28 +120,35 @@ runnable at all; if it is not found, stop and say so — most likely it was
 installed after the desktop app launched, so the app's inherited PATH predates
 it and the app needs restarting.
 
-Then list the workspace folder and report whether it contains any files.
+Then confirm the workspace folder is populated - the Alchemi tree and
+`Test_DELETEME` are expected.
 
-## Step 2 — make sure there is something to test with
+## Step 2 — pick the file you will modify
 
 Steps 3 and 4 need a **tracked** file — one AccuRev already knows about — that
 you can modify.
 
-**If the workspace has files, use one of them.** This is the good case and needs
-no setup at all: pick a small plain-text file, and say which one you chose. Do
-not create anything.
+**The workspace is populated, so just pick one.** No setup, no creating
+anything, nothing to ask permission for.
+
+**Prefer something under `Test_DELETEME`.** The folder name says what it is for,
+so a comment line you never keep is of no consequence to anyone. A small `.cs`
+or `.txt` file is ideal. If nothing there suits, the Alchemi tree has plain
+`.bat` and source files.
+
+Say which file you chose before you touch it.
 
 **Avoid anything whose status includes `(elink)`.** Those are element links
 rather than regular files, and diffing a link is a different question from
 diffing a file — an odd result there would muddy the one thing step 4 is
-measuring. Plain `(member)` is what you want. Do not worry about what the existing files are for — the
-sandbox stream exists to be poked at, and you are only adding a comment line to
-one file, locally, which you will never keep.
+measuring. Plain `(member)` is what you want.
 
-**If the workspace is empty**, there is nothing tracked to modify. Say so and
-ask the human whether to create one small file and `accurev add` + `accurev
-keep` it as setup. That is the single exception to rule 2, and only with them
-saying yes in this conversation. Keep it to one file with a few lines.
+Do not agonise over what the existing files are for. The stream exists to be
+poked at, you are adding one comment line, locally, and you will never keep it.
+
+**If the workspace turns out to be empty after all** — it should not be — stop
+and say so rather than creating anything. That would mean the snapshot caught no
+content, which is a finding in itself and needs a human decision.
 
 ## Step 3 — does `-O` work?
 
