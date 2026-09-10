@@ -6,14 +6,20 @@ Two things to do yourself, then hand the rest to Claude:
 
 1. **Switch out of auto mode.** In auto mode, whether a write gets run is a
    judgement rather than a hard stop. For this work you want writes to prompt.
-2. **Add a deny rule** so `accurev promote` cannot run even by accident. In
-   `.claude/settings.local.json` in whichever folder you open as the project:
+2. **Add a deny rule** so `accurev promote` cannot run even by accident.
 
-   ```json
-   { "permissions": { "deny": ["Bash(accurev promote:*)"] } }
+   The file is `.claude/settings.local.json` in **whichever folder you open as
+   the project** — for this exercise, the AccuRev workspace, not the git clone.
+   It will not exist yet: Claude Code creates it when you make permission
+   decisions, and it is gitignored so it never arrives with a clone. Create it:
+
+   ```
+   New-Item -ItemType Directory -Force .claude | Out-Null
+   '{ "permissions": { "deny": ["Bash(accurev promote:*)"] } }' | Set-Content .claude\settings.local.json -Encoding utf8
    ```
 
-   Verify it fires — this matches the rule but does nothing:
+   Restart the app so it is picked up. Then verify it fires — this matches the
+   rule but does nothing:
    `accurev promote --help`. If that is refused, the rule works. If it runs,
    managed settings are ignoring project rules; tell Claude, and rely on the
    prompts instead.
