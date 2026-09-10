@@ -255,9 +255,18 @@ function Get-AccuRevExternals {
 
     try { $doc = [xml]$r.Out } catch { return @() }
 
+    # EXCLUDE OUR OWN FILES. In an AccuRev workspace the toolchain is itself
+    # (external) -- .claude/ is copied in, not tracked by the depot -- so
+    # without this the diff dumps every script and doc into the draft as new
+    # files. Same reason Test-IsSourceFile exists on the transcript side.
     return @($doc.SelectNodes('//element') | Where-Object {
         $_.status -and $_.status.Contains('(external)') -and $_.dir -ne 'yes'
-    } | ForEach-Object { $_.location })
+    } | ForEach-Object { $_.location } | Where-Object {
+        $l = $_.Replace('', '/').ToLower()
+        ($l -notmatch '(^|/)\.claude/') -and
+        ($l -notmatch '(^|/)\.git/')    -and
+        ($l -notmatch '(^|/)claude\.md$')
+    })
 }
 
 function AccuRev-Diff {
