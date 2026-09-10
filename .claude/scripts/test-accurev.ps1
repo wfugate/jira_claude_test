@@ -44,10 +44,31 @@ function Note([string] $Text) {
     [void]$Script:Notes.Add($Text)
 }
 
-function Vcs([string[]] $Args) {
-    # Returns the combined output as a single string.
-    $o = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Vcs @Args 2>&1
-    return (($o | ForEach-Object { [string]$_ }) -join "`n")
+function Vcs([string[]] $VcsArgs) {
+    <#
+      Run vcs.ps1 and return its combined output as one string.
+
+      NOT $Args. That is a PowerShell automatic variable and cannot be used as a
+      parameter name -- it silently does not bind, so every call ran vcs.ps1
+      with no arguments and got back its usage message. Half the checks then
+      passed against that usage text, because "is not empty" and "has no !!
+      line" are both true of it.
+
+      The same trap was found and fixed in this codebase once before (review
+      finding F16). Hence the sentinel below: a usage message means the
+      arguments never arrived, and a test must never score against it.
+    #>
+    $o = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Vcs @VcsArgs 2>&1
+    $Text = (($o | ForEach-Object { [string]$_ }) -join "`n")
+
+    if ($Text -match 'Usage: vcs\.ps1') {
+        Write-Output ''
+        Write-Output "  ABORT  vcs.ps1 printed its usage message for: $($VcsArgs -join ' ')"
+        Write-Output '         The arguments did not reach it, so every check below would be'
+        Write-Output '         scored against usage text rather than real output.'
+        exit 2
+    }
+    return $Text
 }
 
 
@@ -92,7 +113,7 @@ if (-not $TestFile) {
     $Candidates = @(Get-ChildItem -Path $Root -Recurse -File -Include *.txt,*.cs,*.bat `
                         -ErrorAction SilentlyContinue |
                     Where-Object { $_.FullName -notmatch '\\\.claude\\' -and $_.Length -lt 65536 } |
-                    Sort-Object { $_.FullName -notmatch 'Test_DELETEME' }, Length)
+                    Sort-Object { $_.FullName -notmatch '(?i)test_deleteme' }, Length)
     if ($Candidates.Count) { $TestFile = $Candidates[0].FullName }
 }
 else {
