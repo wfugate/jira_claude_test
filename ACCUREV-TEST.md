@@ -28,9 +28,11 @@ Two things to do yourself, then hand the rest to Claude:
    for anything, and do not let Claude create it — `mkws` is a server-side
    write and the flags are not worth guessing at.
 
-   Backing stream: **`X_Test_Dev`** — the bottom of the sandbox chain
-   (`X_Test` → `X_Test_Test` → `X_Test_Dev`). Anything accidentally promoted
-   from there lands in a sandbox stream nobody reads, rather than in a parent.
+   Backing stream: **`X_Test_William_Dev`** — the bottom of a chain made for
+   this work: `X_Tett_William` (a snapshot) → `X_Test_William_Test` →
+   `X_Test_William_Dev`. Because the top of that chain is a snapshot, nothing
+   upstream can reach the workspace, and an accidental promote would land in a
+   leaf stream made for this exercise.
 
    Put it somewhere obvious — a new folder, not inside the git clone.
 
@@ -113,8 +115,13 @@ Steps 3 and 4 need a **tracked** file — one AccuRev already knows about — th
 you can modify.
 
 **If the workspace has files, use one of them.** This is the good case and needs
-no setup at all: pick a small text file, and say which one you chose. Do not
-create anything. Do not worry about what the existing files are for — the
+no setup at all: pick a small plain-text file, and say which one you chose. Do
+not create anything.
+
+**Avoid anything whose status includes `(elink)`.** Those are element links
+rather than regular files, and diffing a link is a different question from
+diffing a file — an odd result there would muddy the one thing step 4 is
+measuring. Plain `(member)` is what you want. Do not worry about what the existing files are for — the
 sandbox stream exists to be poked at, and you are only adding a comment line to
 one file, locally, which you will never keep.
 
