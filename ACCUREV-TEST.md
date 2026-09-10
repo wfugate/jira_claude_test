@@ -24,7 +24,20 @@ Two things to do yourself, then hand the rest to Claude:
    managed settings are ignoring project rules; tell Claude, and rely on the
    prompts instead.
 
-Then open a chat in the AccuRev workspace folder and say: *"Read
+3. **Create a fresh workspace, yourself, in the GUI.** Not one you already use
+   for anything, and do not let Claude create it — `mkws` is a server-side
+   write and the flags are not worth guessing at.
+
+   Backing stream: **`X_Test_Dev`** — the bottom of the sandbox chain
+   (`X_Test` → `X_Test_Test` → `X_Test_Dev`). Anything accidentally promoted
+   from there lands in a sandbox stream nobody reads, rather than in a parent.
+
+   Put it somewhere obvious — a new folder, not inside the git clone.
+
+4. **Copy `ACCUREV-TEST.md` into that workspace folder** so Claude can read it
+   without reaching into the git clone.
+
+Then open a chat **with the workspace folder as the project** and say: *"Read
 ACCUREV-TEST.md and work through it."*
 
 ---
@@ -60,6 +73,9 @@ fixing code.
    as though it worked.
 5. **Report failures verbatim.** An error message is more useful than a summary
    of it. Do not tidy them up.
+6. **Never create or modify a workspace or stream.** No `mkws`, `chws`,
+   `mkstream`, `chstream`, `reparent`. The workspace already exists and was made
+   by hand; if something about it looks wrong, say so rather than fixing it.
 
 ### The four commands under test
 
@@ -93,14 +109,19 @@ Then list the workspace folder and report whether it contains any files.
 
 ## Step 2 — make sure there is something to test with
 
-Both of the next two steps need a **tracked** file to modify.
+Steps 3 and 4 need a **tracked** file — one AccuRev already knows about — that
+you can modify.
 
-If the workspace has files, pick a small one and use it.
+**If the workspace has files, use one of them.** This is the good case and needs
+no setup at all: pick a small text file, and say which one you chose. Do not
+create anything. Do not worry about what the existing files are for — the
+sandbox stream exists to be poked at, and you are only adding a comment line to
+one file, locally, which you will never keep.
 
-**If the workspace is empty**, say so and ask the human whether to create one
-file and `accurev add` + `accurev keep` it as setup. That is the single
-exception to rule 2 — do not do it without them saying yes in this
-conversation.
+**If the workspace is empty**, there is nothing tracked to modify. Say so and
+ask the human whether to create one small file and `accurev add` + `accurev
+keep` it as setup. That is the single exception to rule 2, and only with them
+saying yes in this conversation. Keep it to one file with a few lines.
 
 ## Step 3 — does `-O` work?
 
