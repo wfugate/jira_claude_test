@@ -8,6 +8,8 @@ that did the work, and posts it after approval.
 | `REFERENCE.md` | What it does, how, every file, and why each decision was made. Start here. |
 | `INSTALL.md` | Getting it onto a machine. |
 | `DEMO.md` | A 15-minute demo for colleagues, with the prompts. |
+| `NEXT.md` | **Start here if you are picking this up.** What is verified, what is next, what not to redo. |
+| `ACCUREV-TEST.md` | The AccuRev command verification exercise and its findings. |
 
 The `*.cs` files are a throwaway lending fixture. They exist only to produce a
 diff and are not meant to compile.
