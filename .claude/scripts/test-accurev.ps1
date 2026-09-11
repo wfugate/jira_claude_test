@@ -90,6 +90,48 @@ $VcsText = [IO.File]::ReadAllText($Vcs, (New-Object System.Text.UTF8Encoding($fa
 Check 'vcs.ps1 has the CMD capture fix (contains ComSpec)' ($VcsText -match 'ComSpec') `
       'This copy of vcs.ps1 predates the fix. Pull the repo and re-copy, or clone into the workspace.'
 
+# AM I ACTUALLY IN AN ACCUREV WORKSPACE?
+#
+# This has now been the third run that measured the wrong thing. First $Args did
+# not bind so everything scored against a usage message; then the script was run
+# from the git clone rather than the workspace, so every accurev command failed
+# with "not in a directory associated with a workspace" and the checks scored
+# that instead.
+#
+# A test that runs in the wrong place and still reports numbers is worse than
+# one that refuses. So: ask accurev where it thinks it is, and stop if the
+# answer is not a workspace.
+Push-Location -LiteralPath $Root
+try {
+    $Info = (& accurev info 2>&1 | Out-String)
+} catch {
+    $Info = "could not run accurev info: $($_.Exception.Message)"
+}
+Pop-Location
+
+if ($Info -match 'not in a directory associated with a workspace' -or
+    $Info -notmatch '(?im)^\s*Workspace/ref:\s*\S') {
+    Write-Output ''
+    Write-Output '  ABORT  this is not an AccuRev workspace.'
+    Write-Output "         root: $Root"
+    Write-Output ''
+    Write-Output '         accurev info said:'
+    foreach ($l in @($Info -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 6)) {
+        Write-Output "           $l"
+    }
+    Write-Output ''
+    Write-Output '         cd to the AccuRev workspace and run it from there. Running from'
+    Write-Output '         the git clone scores every check against an error message.'
+    exit 2
+}
+
+$WsLine = (@($Info -split "`r?`n" | Where-Object { $_ -match '(?i)^\s*Workspace/ref:' }) | Select-Object -First 1)
+Write-Output "        $($WsLine.Trim())"
+
+if (Test-Path (Join-Path $Root '.git')) {
+    Note 'This workspace also contains a .git directory. UPDATEJIRA_VCS is forcing accurev, but that is worth knowing.'
+}
+
 $Backend = Vcs @('backend')
 Check 'backend resolves to accurev' ($Backend -match 'backend:\s*accurev') `
       "Got: $($Backend -split "`n" | Select-Object -First 1)"

@@ -262,7 +262,7 @@ function Get-AccuRevExternals {
     return @($doc.SelectNodes('//element') | Where-Object {
         $_.status -and $_.status.Contains('(external)') -and $_.dir -ne 'yes'
     } | ForEach-Object { $_.location } | Where-Object {
-        $l = $_.Replace('', '/').ToLower()
+        $l = $_.Replace([char]92, '/').ToLower()
         ($l -notmatch '(^|/)\.claude/') -and
         ($l -notmatch '(^|/)\.git/')    -and
         ($l -notmatch '(^|/)claude\.md$')
