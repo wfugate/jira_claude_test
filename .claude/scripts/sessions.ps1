@@ -58,13 +58,25 @@ function Get-ProjectTranscripts {
       its own project directory -- C--demo-lending-multi--claude-scripts exists
       in practice -- and that work belongs to this repo too.
     #>
-    $Mangled = $RepoRoot -replace '[:\\/.]', '-'
-    $Base    = Join-Path $env:USERPROFILE '.claude\projects'
+    # Do not try to reproduce the mangling. It is undocumented, it has changed,
+    # and the only thing reliably true of it is that it is one character in, one
+    # character out: "C:\demo\lending-multi\.claude" becomes
+    # "C--demo-lending-multi--claude", same length. Which punctuation it folds
+    # is the open question -- '_' in particular -- and guessing wrong produces
+    # ZERO sessions with no error, which reads as "this ticket was never
+    # discussed" rather than as a bug.
+    #
+    # So match every non-alphanumeric character with '?' and let whatever the
+    # mangling chose fall through it. The glob is only a cheap prefilter; the
+    # `cwd` field inside each file is what actually decides.
+    $Glob = ($RepoRoot -replace '[^A-Za-z0-9]', '?') + '*'
+    $Base = Join-Path $env:USERPROFILE '.claude\projects'
     if (-not (Test-Path $Base)) { return @() }
 
     $Found = New-Object System.Collections.ArrayList
 
-    foreach ($Dir in @(Get-ChildItem -Path $Base -Directory -Filter "$Mangled*" -ErrorAction SilentlyContinue)) {
+    foreach ($Dir in @(Get-ChildItem -Path $Base -Directory -ErrorAction SilentlyContinue |
+                       Where-Object { $_.Name -like $Glob })) {
         foreach ($F in @(Get-ChildItem -Path $Dir.FullName -Filter '*.jsonl' -ErrorAction SilentlyContinue)) {
             $Cwd = Get-TranscriptCwd -Path $F.FullName
             # No cwd at all: keep it. The glob matched, and dropping a session
